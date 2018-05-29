@@ -1,6 +1,14 @@
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
 
+//constants
+#define TIME1 10 //time in sec to mix, step 1
+#define TEMP2 40 //temp to cool to, step 2
+
+/////////////////////////////////////////////
+// do not touch text below!
+////////////////////////////////////////////
+
 //Relays. HIGH is ON
 #define MIXER 4    //mixer motor
 #define COOL_ON  5 //open cooling valve
@@ -13,11 +21,12 @@
 LiquidCrystal_I2C lcd(0x27,16,2);
 
 //global vars
-int step = 0;
-int temp = 0;
-int mix  = 0;
-int cool = 0;
-int buzz = 0;
+volatile int step = 0;
+volatile int temp = 50;
+volatile int mix  = 0;
+volatile int cool = 0;
+volatile int buzz = 0;
+volatile int cntdown = 0;
 
 //functions
 void SetMixer(int state)
@@ -48,14 +57,18 @@ void SetCooler(int state)
   
 }
 
-int ReadTemp()
+void ReadTemp()
 {
- return 25;  
+  if(cool==1) {
+    if(temp > 20) temp -= 1;
+  } else {
+    if(temp < 100) temp += 1;
+  }
 }
 
 void UpdateDisplay()
 {
-  temp = ReadTemp();
+  ReadTemp();
   lcd.setCursor(0,0);
   lcd.print("TEMP:");
   lcd.print(temp);
@@ -91,7 +104,25 @@ int ReadBtn(int btn)
   }
 }
 
+int DoCountdown()
+{
+  if(cntdown>0) {
+    cntdown -= 1;
+    delay(1000);
+    return cntdown;
+  } else {
+    return 0;
+  }
 
+}
+
+void SetStep(int setto)
+{
+  step = setto;
+  Serial.print("Step: ");
+  Serial.println(step);  
+}
+/////////////////////////////////////////////////////////////////
 //main app
 void setup() {
   // put your setup code here, to run once:
@@ -104,24 +135,47 @@ void setup() {
 
     pinMode(BTN_START, INPUT_PULLUP);
 
-    lcd.init();                      // Инициализация дисплея  
-    lcd.backlight();                 // Подключение подсветки
+    lcd.init();
+    lcd.backlight();
     UpdateDisplay();
         
     Serial.println("Main loop");
 }
 
 void loop() {
-  if(ReadBtn(BTN_START) == 1) {
-    SetMixer(1); 
-    SetCooler(1);
-  } else {
-    SetMixer(0);
-    SetCooler(0);
+  //step 0
+  //just wait for start button
+  SetStep(0);
+  while(ReadBtn(BTN_START) == 0) {
+    UpdateDisplay();
+    delay(1000);
   }
-  UpdateDisplay();
-  Serial.println(btn);
-  delay(1000);
-  
+
+  //step 1
+  //mix for TIME1
+  SetStep(1);
+  SetMixer(1);
+  cntdown = TIME1;
+  while(DoCountdown()) {
+    UpdateDisplay();
+    // no delay here - DoCountdown does it
+  }
+
+  //step 2
+  //start cooling until TEMP2
+  SetStep(2);
+  SetCooler(1);
+  while(temp > TEMP2) {
+    UpdateDisplay(); //refreshes temp
+    delay(1000);
+  }
+
+  //step 3
+  //wait for button
+  SetStep(3);
+   while(ReadBtn(BTN_START) == 0) {
+    UpdateDisplay();
+    delay(1000);
+  }
   
 }
