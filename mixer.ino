@@ -1,5 +1,9 @@
 #include <Wire.h> 
-#include <LiquidCrystal_I2C.h>
+
+
+#include <LEDMatrixDriver.hpp>
+
+//#include <LiquidCrystal_I2C.h>
 
 //constants
 #define TIME1 31 //time in sec to mix, step 1
@@ -13,15 +17,33 @@
 ////////////////////////////////////////////
 
 //Relays. HIGH is ON
-#define MIXER 4    //mixer motor
-#define COOL_ON  5 //open cooling valve
-#define COOL_OFF 6 //close cooling valve
-#define BUZZER   7 //buzzer for alarm
+#define MIXER     4    //mixer motor
+#define COOL_ON   5 //open cooling valve
+#define COOL_OFF  6 //close cooling valve
+#define BUZZER    7 //buzzer for alarm
 //Buttons
-#define BTN_START   0 //
+#define BTN_START  1
+#define BTN_STOP   3
+
+/* Indicator pins
+   8 to DIN,
+   2 to CLK,
+   3 to CS,
+*/
+/* 1 driver, cs=3*/
+LEDMatrixDriver lmd(1, 3);
+
+
+/*
+TEMP sensor:
+D13 - CK
+D10 - SO
+D9 - CS
+
+*/
 
 //lcd on i2c expander, addr=0x27, size=16x2
-LiquidCrystal_I2C lcd(0x27,16,2);
+//LiquidCrystal_I2C lcd(0x27,16,2);
 
 //global vars
 volatile int step = 0;
@@ -83,7 +105,9 @@ void ReadTemp()
 void UpdateDisplay()
 {
   ReadTemp();
-  lcd.setCursor(0,0);
+  Serial.print("Update display\n");
+  
+/*  lcd.setCursor(0,0);
   lcd.print("T:");
   if(temp < 10) lcd.print("0");
   lcd.print(temp);
@@ -119,7 +143,7 @@ void UpdateDisplay()
     lcd.print("COOL");
   } else {
     lcd.print("cool");
-  }
+  }*/
 }
 
 int ReadBtn(int btn)
@@ -164,21 +188,53 @@ void setup() {
     pinMode(BUZZER, OUTPUT);
 
     pinMode(BTN_START, INPUT_PULLUP);
-
-    lcd.init();
-    lcd.backlight();
+    
+    //segment indicator
+  
+  lmd.setEnabled(true);
+  lmd.setIntensity(2);  // 0 = min, 15 = max
+  lmd.setScanLimit(7);  // 0-7: Show 1-8 digits. Beware of currenct restrictions for 1-3 digits! See datasheet.
+  lmd.setDecode(0xFF);
+  while(true) {
+  lmd.setDigit(7, LEDMatrixDriver::BCD_DASH);
+  lmd.setDigit(6, LEDMatrixDriver::BCD_BLANK);
+  lmd.setDigit(5, LEDMatrixDriver::BCD_H);
+  lmd.setDigit(4, LEDMatrixDriver::BCD_E);
+  lmd.setDigit(3, LEDMatrixDriver::BCD_L);
+  lmd.setDigit(2, LEDMatrixDriver::BCD_P);
+  lmd.setDigit(1, LEDMatrixDriver::BCD_BLANK);
+  lmd.setDigit(0, LEDMatrixDriver::BCD_DASH);
+  lmd.display();
+  delay(1000);
+  lmd.setDigit(7, 7);
+  lmd.setDigit(6, 6);
+  lmd.setDigit(5, 5);
+  lmd.setDigit(4, 4);
+  lmd.setDigit(3, 3);
+  lmd.setDigit(2, 2);
+  lmd.setDigit(1, 1);
+  lmd.setDigit(0, 0);
+  lmd.display();
+  delay(1000);
+  
+  }
+    // LCD indicator
+    //lcd.init();
+    //lcd.backlight();
     UpdateDisplay();
         
     Serial.println("Main loop");
 }
 
 void loop() {
+  
   //step 0
   //just wait for start button
   SetStep(0);
   SetBuzzer(0);
   SetMixer(0);
   SetCooler(0);
+
   //wait for release
   while(ReadBtn(BTN_START) == 1) {
     UpdateDisplay();
