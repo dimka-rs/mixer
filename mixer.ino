@@ -1,6 +1,6 @@
 #include <Wire.h> 
 
-
+#include "max6675.h"
 #include <LEDMatrixDriver.hpp>
 
 //#include <LiquidCrystal_I2C.h>
@@ -26,21 +26,24 @@
 #define BTN_STOP   3
 
 /* Indicator pins
-   8 to DIN,
-   2 to CLK,
+   11-MOSI to DIN,
+   13-SCK to CLK,
    3 to CS,
+   driver = 1
 */
-/* 1 driver, cs=3*/
 LEDMatrixDriver lmd(1, 3);
 
 
 /*
 TEMP sensor:
-D13 - CK
-D10 - SO
+D14 - CK
+D8 - SO
 D9 - CS
-
 */
+
+//MAX6675 tc(thermoCLK, thermoCS, thermoDO);
+MAX6675 tc(14, 9, 8);
+
 
 //lcd on i2c expander, addr=0x27, size=16x2
 //LiquidCrystal_I2C lcd(0x27,16,2);
@@ -188,6 +191,9 @@ void setup() {
     pinMode(BUZZER, OUTPUT);
 
     pinMode(BTN_START, INPUT_PULLUP);
+    SetBuzzer(1);
+    SetMixer(1);
+    SetCooler(1);
     
     //segment indicator
   
@@ -216,6 +222,10 @@ void setup() {
   lmd.setDigit(0, 0);
   lmd.display();
   delay(1000);
+
+  Serial.print("T=");
+  Serial.print(tc.readCelsius());
+  Serial.print(" C\n");
   
   }
     // LCD indicator
