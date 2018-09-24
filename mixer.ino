@@ -12,6 +12,8 @@
 #define TIME5 100 //time in sec to mix, step 5
 #define TEMP6 28 //temp to cool to, step 6
 
+#define DEBUG 1
+
 /////////////////////////////////////////////
 // do not touch text below!
 ////////////////////////////////////////////
@@ -108,12 +110,21 @@ void ReadTemp()
 void UpdateDisplay()
 {
   ReadTemp();
+#ifdef  DEBUG
   Serial.print("Step=");
   Serial.print(step);
   Serial.print(", temp=");
   Serial.print(temp);
   Serial.print(", cnt=");
-  Serial.println(cntdown);
+  Serial.print(cntdown);
+  Serial.print(", mix=");
+  Serial.print(mix);
+  Serial.print(", cool=");
+  Serial.print(cool);
+  Serial.print(", buzz=");
+  Serial.print(buzz);
+  Serial.println("");
+#endif
   /* step */
   if (step >= 10) {
     lmd.setDigit(7, step/10);
@@ -144,7 +155,7 @@ void UpdateDisplay()
   } else {
     lmd.setDigit(1, LEDMatrixDriver::BCD_BLANK);
   }
-  lmd.setDigit(0, cntdown%10);
+  lmd.setDigit(0, cntdown%10, buzz != 0);
   lmd.display();
   
 /*  lcd.setCursor(0,0);
@@ -213,7 +224,7 @@ int DoCountdown()
 void SetStep(int setto)
 {
   step = setto;
-  Serial.print("Step: ");
+  Serial.print(">> >> >> >> >> Step: ");
   Serial.println(step);  
 }
 /////////////////////////////////////////////////////////////////
