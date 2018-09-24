@@ -22,8 +22,8 @@
 #define COOL_OFF  6 //close cooling valve
 #define BUZZER    7 //buzzer for alarm
 //Buttons
-#define BTN_START  1
-#define BTN_STOP   3
+#define BTN_START  19 //A5
+#define BTN_STOP   2
 
 /* Indicator pins
    11-MOSI to DIN,
@@ -101,14 +101,51 @@ void ReadTemp()
   if(cool==1) {
     if(temp > 20) temp -= 1;
   } else {
-    if(temp < 100) temp += 1;
+    if(temp < 110) temp += 1;
   }
 }
 
 void UpdateDisplay()
 {
   ReadTemp();
-  Serial.print("Update display\n");
+  Serial.print("Step=");
+  Serial.print(step);
+  Serial.print(", temp=");
+  Serial.print(temp);
+  Serial.print(", cnt=");
+  Serial.println(cntdown);
+  /* step */
+  if (step >= 10) {
+    lmd.setDigit(7, step/10);
+  } else {
+    lmd.setDigit(7, LEDMatrixDriver::BCD_BLANK);
+  }
+  lmd.setDigit(6, step%10, true);
+  /* temp */
+  if(temp >= 100) {
+    lmd.setDigit(5, temp/100);
+  } else {
+    lmd.setDigit(5, LEDMatrixDriver::BCD_BLANK);
+  }
+  if(temp >= 10) {
+    lmd.setDigit(4, (temp%100)/10);
+  } else {
+    lmd.setDigit(4, LEDMatrixDriver::BCD_BLANK);
+  }
+  lmd.setDigit(3, temp%10, true);
+  /* cntdown */
+  if(cntdown >= 100) {
+    lmd.setDigit(2, cntdown/100);
+  } else {
+    lmd.setDigit(2, LEDMatrixDriver::BCD_BLANK);
+  }
+  if(cntdown >= 10) {
+    lmd.setDigit(1, (cntdown%100)/10);
+  } else {
+    lmd.setDigit(1, LEDMatrixDriver::BCD_BLANK);
+  }
+  lmd.setDigit(0, cntdown%10);
+  lmd.display();
   
 /*  lcd.setCursor(0,0);
   lcd.print("T:");
@@ -181,58 +218,33 @@ void SetStep(int setto)
 }
 /////////////////////////////////////////////////////////////////
 //main app
+////////////////////////////////////////////////////////////////
 void setup() {
-  // put your setup code here, to run once:
+
     Serial.begin(115200);
     Serial.println("Init...");
+
+    /* Outputs */
     pinMode(MIXER, OUTPUT);
     pinMode(COOL_ON, OUTPUT);
     pinMode(COOL_OFF, OUTPUT);
     pinMode(BUZZER, OUTPUT);
 
+    /* Inputs */
     pinMode(BTN_START, INPUT_PULLUP);
-    SetBuzzer(1);
-    SetMixer(1);
-    SetCooler(1);
     
-    //segment indicator
+    /* segment indicator */
+    lmd.setEnabled(true);
+    lmd.setIntensity(7);  // 0 = min, 15 = max
+    lmd.setScanLimit(7);  // 0-7: Show 1-8 digits. Beware of currenct restrictions for 1-3 digits! See datasheet.
+    lmd.setDecode(0xFF);
   
-  lmd.setEnabled(true);
-  lmd.setIntensity(2);  // 0 = min, 15 = max
-  lmd.setScanLimit(7);  // 0-7: Show 1-8 digits. Beware of currenct restrictions for 1-3 digits! See datasheet.
-  lmd.setDecode(0xFF);
-  while(true) {
-  lmd.setDigit(7, LEDMatrixDriver::BCD_DASH);
-  lmd.setDigit(6, LEDMatrixDriver::BCD_BLANK);
-  lmd.setDigit(5, LEDMatrixDriver::BCD_H);
-  lmd.setDigit(4, LEDMatrixDriver::BCD_E);
-  lmd.setDigit(3, LEDMatrixDriver::BCD_L);
-  lmd.setDigit(2, LEDMatrixDriver::BCD_P);
-  lmd.setDigit(1, LEDMatrixDriver::BCD_BLANK);
-  lmd.setDigit(0, LEDMatrixDriver::BCD_DASH);
-  lmd.display();
-  delay(1000);
-  lmd.setDigit(7, 7);
-  lmd.setDigit(6, 6);
-  lmd.setDigit(5, 5);
-  lmd.setDigit(4, 4);
-  lmd.setDigit(3, 3);
-  lmd.setDigit(2, 2);
-  lmd.setDigit(1, 1);
-  lmd.setDigit(0, 0);
-  lmd.display();
-  delay(1000);
-
-  Serial.print("T=");
-  Serial.print(tc.readCelsius());
-  Serial.print(" C\n");
-  
-  }
-    // LCD indicator
+    /* LCD indicator */
     //lcd.init();
     //lcd.backlight();
+
     UpdateDisplay();
-        
+
     Serial.println("Main loop");
 }
 
