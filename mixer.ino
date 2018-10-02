@@ -1,7 +1,8 @@
 #include <Wire.h> 
-
 #include "max6675.h"
 #include <LEDMatrixDriver.hpp>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 //#include <LiquidCrystal_I2C.h>
 
@@ -13,7 +14,8 @@
 #define TEMP6 28 //temp to cool to, step 6
 
 #define DEBUG 1
-
+#define FILTER_TEMP_MIN (0)
+#define FILTER_TEMP_MAX (100)
 /////////////////////////////////////////////
 // do not touch text below!
 ////////////////////////////////////////////
@@ -25,7 +27,11 @@
 #define BUZZER    7 //buzzer for alarm
 //Buttons
 #define BTN_START  19 //A5
-#define BTN_STOP   2
+#define BTN_STOP   18 //A4
+// Temperature sensor
+#define ONE_WIRE_BUS 2
+// LED indicator
+#define LED_CS 3
 
 /* Indicator pins
    11-MOSI to DIN,
@@ -33,7 +39,7 @@
    3 to CS,
    driver = 1
 */
-LEDMatrixDriver lmd(1, 3);
+LEDMatrixDriver lmd(1, LED_CS);
 
 
 /*
@@ -44,7 +50,11 @@ D9 - CS
 */
 
 //MAX6675 tc(thermoCLK, thermoCS, thermoDO);
-MAX6675 tc(14, 9, 8);
+//MAX6675 tc(14, 9, 8);
+
+/* DS18B20*/
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
 
 
 //lcd on i2c expander, addr=0x27, size=16x2
@@ -100,11 +110,24 @@ void SetCooler(int state)
 
 void ReadTemp()
 {
+  sensors.requestTemperatures();
+  //do some filtering
+  int16_t t = sensors.getTempCByIndex(0); //dev index = 0
+  if( t >= FILTER_TEMP_MIN and t <= FILTER_TEMP_MAX)
+  {
+    temp = t;
+  } else {
+    Serial.print("Wrong temperature: ");
+    Serial.println(t);
+  }
+  /*
+  // debug - selfheating emulation
   if(cool==1) {
     if(temp > 20) temp -= 1;
   } else {
     if(temp < 110) temp += 1;
   }
+  */
 }
 
 void UpdateDisplay()
@@ -254,6 +277,9 @@ void setup() {
     //lcd.init();
     //lcd.backlight();
 
+    /* DS18B20 */
+    sensors.begin();
+
     UpdateDisplay();
 
     Serial.println("Main loop");
@@ -310,11 +336,9 @@ void loop() {
   //wait for press
   while(ReadBtn(BTN_START) == 1) {
     UpdateDisplay();
-    delay(1000);
+    delay(100);
   }
   SetBuzzer(0);
-  //DEBUG
-  temp=80;
 
   //step 4
   //cool until TEMP4
@@ -357,7 +381,7 @@ void loop() {
   //wait for press
   while(ReadBtn(BTN_START) == 0) {
     UpdateDisplay();
-    delay(1000);
+    delay(100);
   }
   SetBuzzer(0);
 }
