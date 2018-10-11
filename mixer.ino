@@ -1,10 +1,9 @@
 #include <Wire.h> 
 #include "max6675.h"
-#include <LEDMatrixDriver.hpp>
+//#include <LEDMatrixDriver.hpp>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-
-//#include <LiquidCrystal_I2C.h>
+#include <LiquidCrystal_I2C.h>
 
 //constants
 #define TIME1 31 //time in sec to mix, step 1
@@ -16,27 +15,35 @@
 //#define DEBUG 1
 #define FILTER_TEMP_MIN (0)
 #define FILTER_TEMP_MAX (100)
+
 /////////////////////////////////////////////
 // do not touch text below!
 ////////////////////////////////////////////
 
-//Relays. HIGH is ON
+// Choose peripherals //
+#define LCD // 1602 LCD over i2c
+//#define LMD // MAX7291 8 dig LED indicator
+#define DS1820 //use 1-wire DS18B20 sensor
+//#define MAX6675 //use termocouple with MAX6675 adc
+
+// Relays. LOW is ON //
 #define MIXER       7 //mixer motor
 #define VALVE_ON    6 //power cooling valve
 #define VALVE_OPEN  5 //open cooling valve
 #define BUZZER      4 //buzzer for alarm
 
-//Buttons
-#define BTN_START  19 //A5, green
+// Buttons //
+#define BTN_START  15 //A1, green
 //BTN_RESET, red
 //BTN_GND, black
 
-// Temperature sensor
+// Temperature sensor //
 #define ONE_WIRE_BUS 2
 
-// LED indicator
+// LED indicator //
+#ifdef LMD
 #define LED_CS 3
-#define LED_VCC 18 //A4
+#define LED_VCC 14 //A0
 #define LED_NUM 1 //number of LED drivers in chain
 /* Indicator pins
    GND, black
@@ -48,6 +55,7 @@
    18 (A4) - VCC enable, active low
 */
 LEDMatrixDriver lmd(LED_NUM, LED_CS);
+#endif //LMD
 
 
 /*
@@ -65,8 +73,10 @@ OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
 
-//lcd on i2c expander, addr=0x27, size=16x2
-//LiquidCrystal_I2C lcd(0x27,16,2);
+// lcd on i2c expander, addr=0x27, size=16x2 //
+#ifdef LCD
+LiquidCrystal_I2C lcd(0x27,16,2);
+#endif //LCD
 
 //global vars
 volatile int step = 0;
@@ -184,23 +194,24 @@ void UpdateDisplay()
   Serial.print(buzz);
   Serial.println("");
 #endif
-  /* swtich power off and reinit 
+  /* swich power off and reinit 
   in case of  accidental reset */
+  #ifdef LMD
   digitalWrite(LED_VCC, HIGH);
-  delay(20);
+  delay(50);
   digitalWrite(LED_VCC, LOW);
   lmd.setEnabled(true);
   lmd.setIntensity(7);  // 0 = min, 15 = max
   lmd.setScanLimit(7);  // 0-7: Show 1-8 digits. Beware of currenct restrictions for 1-3 digits! See datasheet.
   lmd.setDecode(0xFF);
-  /* step */
+  // step //
   if (step >= 10) {
     lmd.setDigit(7, step/10);
   } else {
     lmd.setDigit(7, LEDMatrixDriver::BCD_BLANK);
   }
   lmd.setDigit(6, step%10, true);
-  /* temp */
+  // temp //
   if(temp >= 100) {
     lmd.setDigit(5, temp/100);
   } else {
@@ -212,7 +223,7 @@ void UpdateDisplay()
     lmd.setDigit(4, LEDMatrixDriver::BCD_BLANK);
   }
   lmd.setDigit(3, temp%10, true);
-  /* cntdown */
+  // cntdown //
   if(cntdown >= 100) {
     lmd.setDigit(2, cntdown/100);
   } else {
@@ -225,8 +236,10 @@ void UpdateDisplay()
   }
   lmd.setDigit(0, cntdown%10, buzz != 0);
   lmd.display();
+  #endif //LMD
   
-/*  lcd.setCursor(0,0);
+  #ifdef LCD
+  lcd.setCursor(0,0);
   lcd.print("T:");
   if(temp < 10) lcd.print("0");
   lcd.print(temp);
@@ -262,7 +275,8 @@ void UpdateDisplay()
     lcd.print("COOL");
   } else {
     lcd.print("cool");
-  }*/
+  }
+  #endif //LCD
 }
 
 /////////////////////////////////////////////////////////////////
@@ -286,18 +300,21 @@ void setup() {
     pinMode(BTN_START, INPUT_PULLUP);
 
     /* segment indicator */
+    #ifdef LMD
     pinMode(LED_VCC, OUTPUT);
     digitalWrite(LED_VCC, LOW);    
-    /* indicator is resetted and inited on every update
+    /* indicator is resetted and inited on every update */
     lmd.setEnabled(true);
     lmd.setIntensity(7);  // 0 = min, 15 = max
     lmd.setScanLimit(7);  // 0-7: Show 1-8 digits. Beware of currenct restrictions for 1-3 digits! See datasheet.
     lmd.setDecode(0xFF);
-    */
+    #endif //LMD
     
     /* LCD indicator */
-    //lcd.init();
-    //lcd.backlight();
+    #ifdef LCD
+    lcd.init();
+    lcd.backlight();
+    #endif //LCD
 
     /* DS18B20 */
     sensors.begin();
@@ -308,7 +325,7 @@ void setup() {
 }
 
 void loop() {
-while (true) {  
+while(1) {
   //step 0
   //just wait for start button
   SetBuzzer(0);
