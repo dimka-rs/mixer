@@ -21,22 +21,26 @@
 ////////////////////////////////////////////
 
 //Relays. HIGH is ON
-#define MIXER     4    //mixer motor
-#define COOL_ON   5 //open cooling valve
-#define COOL_OFF  6 //close cooling valve
-#define BUZZER    7 //buzzer for alarm
+#define MIXER       7 //mixer motor
+#define VALVE_ON    6 //power cooling valve
+#define VALVE_OPEN  5 //open cooling valve
+#define BUZZER      4 //buzzer for alarm
 //Buttons
-#define BTN_START  19 //A5
-#define BTN_STOP   18 //A4
+#define BTN_START  19 //A5, cable 2-green
+//BTN_RESET, cable 2-red
+//BTN_GND, cable 2-black
+
 // Temperature sensor
 #define ONE_WIRE_BUS 2
 // LED indicator
 #define LED_CS 3
 
 /* Indicator pins
-   11-MOSI to DIN,
-   13-SCK to CLK,
-   3 to CS,
+ *  GND, cable 1-yellow
+ *  VCC, cable 2-yellow
+   11-MOSI to DIN, cable 1-greed
+   13-SCK to CLK, cable 1-black
+   3 to CS, cable 1-red
    driver = 1
 */
 LEDMatrixDriver lmd(1, LED_CS);
@@ -72,10 +76,10 @@ volatile int cntdown = 0;
 void SetBuzzer(int state)
 {
   if(state==1){
-    digitalWrite(BUZZER, HIGH);
+    digitalWrite(BUZZER, LOW);
     buzz=1;
   } else if(state==0){
-    digitalWrite(BUZZER, LOW);
+    digitalWrite(BUZZER, HIGH);
     buzz=0;
   }
 }
@@ -83,29 +87,25 @@ void SetBuzzer(int state)
 void SetMixer(int state)
 {
   if(state==1) {
-    digitalWrite(MIXER, HIGH);
+    digitalWrite(MIXER, LOW);
     mix = 1;
   } else if (state==0){
-    digitalWrite(MIXER, LOW);
+    digitalWrite(MIXER, HIGH);
     mix = 0;  
   }
 }
 
 void SetCooler(int state)
 {
-  
+  //always turn power on
+  digitalWrite(VALVE_ON, LOW);
   if(state==1) {
-    digitalWrite(COOL_OFF,LOW);
-    delay(1000);
-    digitalWrite(COOL_ON,HIGH);
+    digitalWrite(VALVE_OPEN, LOW);
     cool=1;
   } else if(state==0) {
-    digitalWrite(COOL_ON,LOW);
-    delay(1000);
-    digitalWrite(COOL_OFF,HIGH);
+    digitalWrite(VALVE_OPEN, HIGH);
     cool=0;
   }
-  
 }
 
 void ReadTemp()
@@ -134,7 +134,8 @@ void UpdateDisplay()
 {
   ReadTemp();
 #ifdef  DEBUG
-  Serial.print("Step=");
+  Serial.print(millis());
+  Serial.print(", Step=");
   Serial.print(step);
   Serial.print(", temp=");
   Serial.print(temp);
@@ -260,9 +261,12 @@ void setup() {
 
     /* Outputs */
     pinMode(MIXER, OUTPUT);
-    pinMode(COOL_ON, OUTPUT);
-    pinMode(COOL_OFF, OUTPUT);
+    SetMixer(0);
+    pinMode(VALVE_ON, OUTPUT);
+    pinMode(VALVE_OPEN, OUTPUT);
+    SetCooler(0);
     pinMode(BUZZER, OUTPUT);
+    SetBuzzer(0);
 
     /* Inputs */
     pinMode(BTN_START, INPUT_PULLUP);
@@ -302,7 +306,7 @@ void loop() {
   //wait for press
   while(ReadBtn(BTN_START) == 0) {
     UpdateDisplay();
-    delay(1000);
+    delay(100);
   }
 
   //step 1
@@ -329,12 +333,12 @@ void loop() {
   SetStep(3);
   SetBuzzer(1);
   //wait for release
-  while(ReadBtn(BTN_START) == 0) {
+  while(ReadBtn(BTN_START) == 1) {
     UpdateDisplay();
     delay(1000);
   }
   //wait for press
-  while(ReadBtn(BTN_START) == 1) {
+  while(ReadBtn(BTN_START) == 0) {
     UpdateDisplay();
     delay(100);
   }
