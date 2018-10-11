@@ -10,10 +10,10 @@
 #define TIME1 31 //time in sec to mix, step 1
 #define TEMP2 40 //temp to cool to, step 2
 #define TEMP4 34 //temp to cool to, step 4
-#define TIME5 100 //time in sec to mix, step 5
+#define TIME5 50 //time in sec to mix, step 5
 #define TEMP6 28 //temp to cool to, step 6
 
-#define DEBUG 1
+//#define DEBUG 1
 #define FILTER_TEMP_MIN (0)
 #define FILTER_TEMP_MAX (100)
 /////////////////////////////////////////////
@@ -25,25 +25,29 @@
 #define VALVE_ON    6 //power cooling valve
 #define VALVE_OPEN  5 //open cooling valve
 #define BUZZER      4 //buzzer for alarm
+
 //Buttons
-#define BTN_START  19 //A5, cable 2-green
-//BTN_RESET, cable 2-red
-//BTN_GND, cable 2-black
+#define BTN_START  19 //A5, green
+//BTN_RESET, red
+//BTN_GND, black
 
 // Temperature sensor
 #define ONE_WIRE_BUS 2
+
 // LED indicator
 #define LED_CS 3
-
+#define LED_VCC 18 //A4
+#define LED_NUM 1 //number of LED drivers in chain
 /* Indicator pins
- *  GND, cable 1-yellow
- *  VCC, cable 2-yellow
-   11-MOSI to DIN, cable 1-greed
-   13-SCK to CLK, cable 1-black
-   3 to CS, cable 1-red
+   GND, black
+   VCC, red
+   11-MOSI to DIN, green
+   13-SCK to CLK, yellow
+   3 to CS, blue
    driver = 1
+   18 (A4) - VCC enable, active low
 */
-LEDMatrixDriver lmd(1, LED_CS);
+LEDMatrixDriver lmd(LED_NUM, LED_CS);
 
 
 /*
@@ -130,6 +134,37 @@ void ReadTemp()
   */
 }
 
+int ReadBtn(int btn)
+{
+  int status = digitalRead(btn);
+  if(status==1) {
+    //pulled up = not pressed
+    return 0;
+  } else {
+    //pulled down = pressed
+    return 1;
+  }
+}
+
+int DoCountdown()
+{
+  if(cntdown > 0) {
+    cntdown -= 1;
+    delay(950);
+    return cntdown;
+  } else {
+    return 0;
+  }
+
+}
+
+void SetStep(int setto)
+{
+  step = setto;
+  Serial.print(">> >> >> >> >> Step: ");
+  Serial.println(step);  
+}
+
 void UpdateDisplay()
 {
   ReadTemp();
@@ -149,6 +184,15 @@ void UpdateDisplay()
   Serial.print(buzz);
   Serial.println("");
 #endif
+  /* swtich power off and reinit 
+  in case of  accidental reset */
+  digitalWrite(LED_VCC, HIGH);
+  delay(20);
+  digitalWrite(LED_VCC, LOW);
+  lmd.setEnabled(true);
+  lmd.setIntensity(7);  // 0 = min, 15 = max
+  lmd.setScanLimit(7);  // 0-7: Show 1-8 digits. Beware of currenct restrictions for 1-3 digits! See datasheet.
+  lmd.setDecode(0xFF);
   /* step */
   if (step >= 10) {
     lmd.setDigit(7, step/10);
@@ -221,36 +265,6 @@ void UpdateDisplay()
   }*/
 }
 
-int ReadBtn(int btn)
-{
-  int status = digitalRead(btn);
-  if(status==1) {
-    //pulled up = not pressed
-    return 0;
-  } else {
-    //pulled down = pressed
-    return 1;
-  }
-}
-
-int DoCountdown()
-{
-  if(cntdown>0) {
-    cntdown -= 1;
-    delay(1000);
-    return cntdown;
-  } else {
-    return 0;
-  }
-
-}
-
-void SetStep(int setto)
-{
-  step = setto;
-  Serial.print(">> >> >> >> >> Step: ");
-  Serial.println(step);  
-}
 /////////////////////////////////////////////////////////////////
 //main app
 ////////////////////////////////////////////////////////////////
@@ -270,13 +284,17 @@ void setup() {
 
     /* Inputs */
     pinMode(BTN_START, INPUT_PULLUP);
-    
+
     /* segment indicator */
+    pinMode(LED_VCC, OUTPUT);
+    digitalWrite(LED_VCC, LOW);    
+    /* indicator is resetted and inited on every update
     lmd.setEnabled(true);
     lmd.setIntensity(7);  // 0 = min, 15 = max
     lmd.setScanLimit(7);  // 0-7: Show 1-8 digits. Beware of currenct restrictions for 1-3 digits! See datasheet.
     lmd.setDecode(0xFF);
-  
+    */
+    
     /* LCD indicator */
     //lcd.init();
     //lcd.backlight();
@@ -290,26 +308,28 @@ void setup() {
 }
 
 void loop() {
-  
+while (true) {  
   //step 0
   //just wait for start button
-  SetStep(0);
   SetBuzzer(0);
+  delay(300);
   SetMixer(0);
+  delay(300);
   SetCooler(0);
+  SetStep(0);
 
   //wait for release
   while(ReadBtn(BTN_START) == 1) {
     UpdateDisplay();
-    delay(1000);
+    delay(950);
   }
   //wait for press
   while(ReadBtn(BTN_START) == 0) {
     UpdateDisplay();
-    delay(100);
+    delay(200);
   }
 
-  //step 1
+  // ----- step 1 -----
   //mix for TIME1
   SetStep(1);
   SetMixer(1);
@@ -319,41 +339,41 @@ void loop() {
     // no delay here - DoCountdown does it
   }
 
-  //step 2
+  // ----- step 2 -----
   //start cooling until TEMP2
   SetStep(2);
   SetCooler(1);
   while(temp > TEMP2) {
     UpdateDisplay(); //refreshes temp
-    delay(1000);
+    delay(950);
   }
 
-  //step 3
+  // ----- step 3 -----
   //wait for button
   SetStep(3);
   SetBuzzer(1);
   //wait for release
   while(ReadBtn(BTN_START) == 1) {
     UpdateDisplay();
-    delay(1000);
+    delay(950);
   }
   //wait for press
   while(ReadBtn(BTN_START) == 0) {
     UpdateDisplay();
-    delay(100);
+    delay(200);
   }
   SetBuzzer(0);
 
-  //step 4
+  // ----- step 4 -----
   //cool until TEMP4
   SetStep(4);
   SetCooler(1);
   while(temp > TEMP4) {
     UpdateDisplay(); //refreshes temp
-    delay(1000);
+    delay(950);
   }
 
-  //step 5
+  // ----- step 5 -----
   //mix for TIME5
   SetStep(5);
   SetMixer(1);
@@ -363,29 +383,30 @@ void loop() {
     // no delay here - DoCountdown does it
   }
 
-  //step 6
+  // ----- step 6 -----
   //cooldown 1 deg/sec down to TEMP6
   //TODO control cooldown speed
   SetStep(6);
   SetCooler(1);
   while(temp > TEMP6) {
     UpdateDisplay(); //refreshes temp
-    delay(1000);
+    delay(950);
   }
 
-  //step 7
+  // ----- step 7 -----
   //buzz until button pressed
   SetStep(7);
   SetBuzzer(1);
   //wait for release
   while(ReadBtn(BTN_START) == 1) {
     UpdateDisplay();
-    delay(1000);
+    delay(950);
   }
   //wait for press
   while(ReadBtn(BTN_START) == 0) {
     UpdateDisplay();
-    delay(100);
+    delay(200);
   }
-  SetBuzzer(0);
+  //return to step 0
+}
 }
