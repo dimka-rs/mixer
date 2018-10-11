@@ -23,8 +23,8 @@
 // Choose peripherals //
 #define LCD // 1602 LCD over i2c
 //#define LMD // MAX7291 8 dig LED indicator
-#define DS1820 //use 1-wire DS18B20 sensor
-//#define MAX6675 //use termocouple with MAX6675 adc
+//#define T_DS1820 //use 1-wire DS18B20 sensor
+#define T_MAX6675 //use termocouple with MAX6675 adc
 
 // Relays. LOW is ON //
 #define MIXER       7 //mixer motor
@@ -37,7 +37,7 @@
 //BTN_RESET, red
 //BTN_GND, black
 
-// Temperature sensor //
+// Temperature sensor 1-wire//
 #define ONE_WIRE_BUS 2
 
 // LED indicator //
@@ -58,19 +58,20 @@ LEDMatrixDriver lmd(LED_NUM, LED_CS);
 #endif //LMD
 
 
-/*
-TEMP sensor:
-D14 - CK
-D8 - SO
-D9 - CS
-*/
+/* TEMP sensor MAX6675 */
+#ifdef T_MAX6675
+#define MAX_CK 13
+#define MAX_SO 12
+#define MAX_CS 3
 
-//MAX6675 tc(thermoCLK, thermoCS, thermoDO);
-//MAX6675 tc(14, 9, 8);
+MAX6675 tc(MAX_CK, MAX_CS, MAX_SO);
+#endif //T_MAX6675
 
 /* DS18B20*/
+#ifdef T_DS1820
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
+#endif //T_DS1820
 
 
 // lcd on i2c expander, addr=0x27, size=16x2 //
@@ -124,9 +125,15 @@ void SetCooler(int state)
 
 void ReadTemp()
 {
+  #ifdef T_DS1820
   sensors.requestTemperatures();
-  //do some filtering
   int16_t t = sensors.getTempCByIndex(0); //dev index = 0
+  #endif //T_DS1820
+
+  #ifdef T_MAX6675
+  int16_t t = tc.readCelsius();
+  #endif
+  //do some filtering
   if( t >= FILTER_TEMP_MIN and t <= FILTER_TEMP_MAX)
   {
     temp = t;
@@ -316,8 +323,10 @@ void setup() {
     lcd.backlight();
     #endif //LCD
 
-    /* DS18B20 */
+    /* TEMP DS18B20 */
+    #ifdef T_DS1820
     sensors.begin();
+    #endif //T_DS1820
 
     UpdateDisplay();
 
