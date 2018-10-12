@@ -411,12 +411,24 @@ while(1) {
 
   // ----- step 6 -----
   //cooldown 1 deg/sec down to TEMP6
-  //TODO control cooldown speed
+  
   SetStep(6);
   SetCooler(1);
+  int16_t target;
+  UpdateDisplay(); //refreshes temp
   while(temp > TEMP6) {
-    UpdateDisplay(); //refreshes temp
-    delay(950);
+    target = temp - 1;
+    //control cooldown speed
+    for(int i = 0 ; i < 59 ; i++){
+      //this loop will try to hold temp stable for 1 minute
+      UpdateDisplay(); //refreshes temp
+      if (temp <= target){
+        SetCooler(0);
+      } else {
+        SetCooler(1); 
+      }
+      delay(950);
+    }
   }
 
   // ----- step 7 -----
