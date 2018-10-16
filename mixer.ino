@@ -11,11 +11,14 @@
 #define TEMP4 34 //temp to cool to, step 4
 #define TIME5 50 //time in sec to mix, step 5
 #define TEMP6 28 //temp to cool to, step 6
+#define VALVE_OPEN_TIME 10 //time in sec to let valve partially open
+#define VALVE_CLOSE_TIME 20 //time in sec to let valve fully close
 
 //#define DEBUG 1
-#define FILTER_TEMP_MIN (0)
-#define FILTER_TEMP_MAX (100)
-
+#define FILTER_TEMP_MIN 0
+#define FILTER_TEMP_MAX 100
+#define DELAY_1S 950
+#define DELAY_POLL 200
 /////////////////////////////////////////////
 // do not touch text below!
 ////////////////////////////////////////////
@@ -28,7 +31,7 @@
 
 // Relays. LOW is ON //
 #define MIXER       7 //mixer motor
-#define VALVE_ON    6 //power cooling valve
+#define VALVE_PWR    6 //power cooling valve
 #define VALVE_OPEN  5 //open cooling valve
 #define BUZZER      4 //buzzer for alarm
 
@@ -112,15 +115,23 @@ void SetMixer(int state)
 
 void SetCooler(int state)
 {
-  //always turn power on
-  digitalWrite(VALVE_ON, LOW);
+  int t = 0;
+  digitalWrite(VALVE_PWR, LOW); //power on
   if(state==1) {
-    digitalWrite(VALVE_OPEN, LOW);
+    digitalWrite(VALVE_OPEN, LOW); //start open
+    t = VALVE_OPEN_TIME;
     cool=1;
   } else if(state==0) {
-    digitalWrite(VALVE_OPEN, HIGH);
+    t = VALVE_CLOSE_TIME;
     cool=0;
   }
+  while(t > 0){
+    t--;
+    UpdateDisplay();
+    delay(DELAY_1S);
+  }
+  digitalWrite(VALVE_OPEN, HIGH); //stop open
+  digitalWrite(VALVE_PWR, HIGH); //power off
 }
 
 void ReadTemp()
@@ -134,11 +145,13 @@ void ReadTemp()
   int16_t t = tc.readCelsius();
   #endif
   //do some filtering
-  if( t >= FILTER_TEMP_MIN and t <= FILTER_TEMP_MAX)
-  {
-    temp = t;
-  } else {
-    Serial.print("Wrong temperature: ");
+  if( t < FILTER_TEMP_MIN) {
+    t = FILTER_TEMP_MIN;
+    Serial.print("Temperature too low! ");
+    Serial.println(t);
+  } else if(t > FILTER_TEMP_MAX) {
+    t = FILTER_TEMP_MAX;
+    Serial.print("Temperature too high! ");
     Serial.println(t);
   }
   /*
@@ -167,7 +180,7 @@ int DoCountdown()
 {
   if(cntdown > 0) {
     cntdown -= 1;
-    delay(950);
+    delay(DELAY_1S);
     return cntdown;
   } else {
     return 0;
@@ -297,7 +310,7 @@ void setup() {
     /* Outputs */
     pinMode(MIXER, OUTPUT);
     SetMixer(0);
-    pinMode(VALVE_ON, OUTPUT);
+    pinMode(VALVE_PWR, OUTPUT);
     pinMode(VALVE_OPEN, OUTPUT);
     SetCooler(0);
     pinMode(BUZZER, OUTPUT);
@@ -347,12 +360,12 @@ while(1) {
   //wait for release
   while(ReadBtn(BTN_START) == 1) {
     UpdateDisplay();
-    delay(950);
+    delay(DELAY_1S);
   }
   //wait for press
   while(ReadBtn(BTN_START) == 0) {
     UpdateDisplay();
-    delay(200);
+    delay(DELAY_POLL);
   }
 
   // ----- step 1 -----
@@ -371,7 +384,7 @@ while(1) {
   SetCooler(1);
   while(temp > TEMP2) {
     UpdateDisplay(); //refreshes temp
-    delay(950);
+    delay(DELAY_1S);
   }
 
   // ----- step 3 -----
@@ -381,12 +394,12 @@ while(1) {
   //wait for release
   while(ReadBtn(BTN_START) == 1) {
     UpdateDisplay();
-    delay(950);
+    delay(DELAY_1S);
   }
   //wait for press
   while(ReadBtn(BTN_START) == 0) {
     UpdateDisplay();
-    delay(200);
+    delay(DELAY_POLL);
   }
   SetBuzzer(0);
 
@@ -396,7 +409,7 @@ while(1) {
   SetCooler(1);
   while(temp > TEMP4) {
     UpdateDisplay(); //refreshes temp
-    delay(950);
+    delay(DELAY_1S);
   }
 
   // ----- step 5 -----
@@ -427,7 +440,7 @@ while(1) {
       } else {
         SetCooler(1); 
       }
-      delay(950);
+      delay(DELAY_1S);
     }
   }
 
@@ -438,12 +451,12 @@ while(1) {
   //wait for release
   while(ReadBtn(BTN_START) == 1) {
     UpdateDisplay();
-    delay(950);
+    delay(DELAY_1S);
   }
   //wait for press
   while(ReadBtn(BTN_START) == 0) {
     UpdateDisplay();
-    delay(200);
+    delay(DELAY_POLL);
   }
   //return to step 0
 }
