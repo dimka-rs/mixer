@@ -7,20 +7,38 @@
 #include <RotaryEncoder.h>
 #include <EEPROM.h>
 
-//constants
+// constants //
+// on adding new param:
+// + increment DATA_SIZE
+// + define new param
+// + define new id
+// + update names arran
+// + update checks and defauls section
+
+#define DATA_SIZE 7 //total params
 #define TIME1 31 //time in sec to mix, step 1
 #define TEMP2 40 //temp to cool to, step 2
 #define TEMP4 34 //temp to cool to, step 4
 #define TIME5 50 //time in sec to mix, step 5
 #define TEMP6 28 //temp to cool to, step 6
-#define VALVE_OPEN_TIME  10 //time in sec to let valve partially open
-#define VALVE_CLOSE_TIME 20 //time in sec to let valve fully close
+#define VLV_O 10 //time in sec to let valve partially open
+#define VLV_C 20 //time in sec to let valve fully close
+
+//indexes
+#define TIME1_ID 0
+#define TEMP2_ID 1
+#define TEMP4_ID 2
+#define TIME5_ID 3
+#define TEMP6_ID 4
+#define VLV_O_ID 5
+#define VLV_C_ID 6
 
 //#define DEBUG 1
 #define FILTER_TEMP_MIN 0
 #define FILTER_TEMP_MAX 100
 #define DELAY_1S 950
 #define DELAY_POLL 200
+
 /////////////////////////////////////////////
 // do not touch text below!
 ////////////////////////////////////////////
@@ -89,12 +107,12 @@ LiquidCrystal_I2C lcd(0x27,16,2);
 #define ENC_B 35 //PC2
 #define BTN_DELAY 200 //ms
 RotaryEncoder encoder(ENC_B, ENC_A);
-#define DATA_SIZE 7
+
+
+// global vars //
 int16_t data[DATA_SIZE];
 char* names[] = {"TIME1:", "TEMP2:", "TEMP4:", "TIME5:", "TEMP6:", "VLV-O:", "VLV-C:"};
 
-
-//g lobal vars //
 volatile int step = 0;
 volatile int temp = 50;
 volatile int mix  = 0;
@@ -134,10 +152,10 @@ void SetCooler(int state)
   digitalWrite(VALVE_PWR, LOW); //power on
   if(state==1) {
     digitalWrite(VALVE_OPEN, LOW); //start open
-    t = VALVE_OPEN_TIME;
+    t = VLV_O;
     cool=1;
   } else if(state==0) {
-    t = VALVE_CLOSE_TIME;
+    t = VLV_C;
     cool=0;
   }
   while(t > 0){
@@ -331,17 +349,16 @@ void loadData(){
     data[i] = 256 * datah + datal;
   }
   //checks & defaults
-  if(data[0] <= 0) data[0] = TIME1;
-  if(data[1] <= 0) data[1] = TEMP2;
-  if(data[2] <= 0) data[2] = TEMP4;
-  if(data[3] <= 0) data[3] = TIME5;
-  if(data[4] <= 0) data[4] = TEMP6;
-  if(data[5] <= 0) data[5] = VALVE_OPEN_TIME;
-  if(data[6] <= 0) data[6] = VALVE_CLOSE_TIME;
+  if(data[TIME1_ID] <= 0) data[TIME1_ID] = TIME1;
+  if(data[TEMP2_ID] <= 0) data[TEMP2_ID] = TEMP2;
+  if(data[TEMP4_ID] <= 0) data[TEMP4_ID] = TEMP4;
+  if(data[TIME5_ID] <= 0) data[TIME5_ID] = TIME5;
+  if(data[TEMP6_ID] <= 0) data[TEMP6_ID] = TEMP6;
+  if(data[VLV_O_ID] <= 0) data[VLV_O_ID] = VLV_O;
+  if(data[VLV_C_ID] <= 0) data[VLV_C_ID] = VLV_C;
 }
 
 void doConfig(){
-  loadData();
   updateDisplayConf();
 
   static int btnReleased = 0;
@@ -423,6 +440,10 @@ void setup() {
     Serial.begin(115200);
     Serial.println("Init...");
 
+    loadData();
+    //check if enter config mode
+    if(ReadBtn(BTN_START) == 1) doConfig();
+
     /* Outputs */
     pinMode(MIXER, OUTPUT);
     SetMixer(0);
@@ -460,13 +481,11 @@ void setup() {
     #endif //T_DS1820
 
     UpdateDisplay();
-
     Serial.println("Main loop");
 }
 
 void loop() {
-  //check if enter config mode
-  if(ReadBtn(BTN_START) == 1) doConfig();
+
 
 while(1) {
   //step 0
@@ -493,7 +512,7 @@ while(1) {
   //mix for TIME1
   SetStep(1);
   SetMixer(1);
-  cntdown = TIME1;
+  cntdown = data[TIME1_ID];
   while(DoCountdown()) {
     UpdateDisplay();
     // no delay here - DoCountdown does it
@@ -503,7 +522,7 @@ while(1) {
   //start cooling until TEMP2
   SetStep(2);
   SetCooler(1);
-  while(temp > TEMP2) {
+  while(temp > data[TEMP2_ID]) {
     UpdateDisplay(); //refreshes temp
     delay(DELAY_1S);
   }
@@ -528,7 +547,7 @@ while(1) {
   //cool until TEMP4
   SetStep(4);
   SetCooler(1);
-  while(temp > TEMP4) {
+  while(temp > data[TEMP4_ID]) {
     UpdateDisplay(); //refreshes temp
     delay(DELAY_1S);
   }
@@ -537,7 +556,7 @@ while(1) {
   //mix for TIME5
   SetStep(5);
   SetMixer(1);
-  cntdown = TIME5;
+  cntdown = data[TIME5_ID];
   while(DoCountdown()) {
     UpdateDisplay();
     // no delay here - DoCountdown does it
@@ -550,7 +569,7 @@ while(1) {
   SetCooler(1);
   int16_t target;
   UpdateDisplay(); //refreshes temp
-  while(temp > TEMP6) {
+  while(temp > data[TEMP6_ID]) {
     target = temp - 1;
     //control cooldown speed
     for(int i = 0 ; i < 59 ; i++){
