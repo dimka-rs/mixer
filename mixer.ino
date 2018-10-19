@@ -13,7 +13,7 @@
 #define TEMP4 34 //temp to cool to, step 4
 #define TIME5 50 //time in sec to mix, step 5
 #define TEMP6 28 //temp to cool to, step 6
-#define VALVE_OPEN_TIME 10 //time in sec to let valve partially open
+#define VALVE_OPEN_TIME  10 //time in sec to let valve partially open
 #define VALVE_CLOSE_TIME 20 //time in sec to let valve fully close
 
 //#define DEBUG 1
@@ -89,9 +89,9 @@ LiquidCrystal_I2C lcd(0x27,16,2);
 #define ENC_B 35 //PC2
 #define BTN_DELAY 200 //ms
 RotaryEncoder encoder(ENC_B, ENC_A);
-#define DATA_SIZE 5
+#define DATA_SIZE 7
 int16_t data[DATA_SIZE];
-char* names[] = {"TIME1:", "TEMP2:", "TEMP4:", "TIME5:", "TEMP6:"};
+char* names[] = {"TIME1:", "TEMP2:", "TEMP4:", "TIME5:", "TEMP6:", "VLV-O:", "VLV-C:"};
 
 
 //g lobal vars //
@@ -330,6 +330,14 @@ void loadData(){
     byte datah = EEPROM.read(address+1);
     data[i] = 256 * datah + datal;
   }
+  //checks & defaults
+  if(data[0] <= 0) data[0] = TIME1;
+  if(data[1] <= 0) data[1] = TEMP2;
+  if(data[2] <= 0) data[2] = TEMP4;
+  if(data[3] <= 0) data[3] = TIME5;
+  if(data[4] <= 0) data[4] = TEMP6;
+  if(data[5] <= 0) data[5] = VALVE_OPEN_TIME;
+  if(data[6] <= 0) data[6] = VALVE_CLOSE_TIME;
 }
 
 void doConfig(){
