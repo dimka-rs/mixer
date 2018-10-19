@@ -4,6 +4,8 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <LiquidCrystal_I2C.h>
+#include <RotaryEncoder.h>
+#include <EEPROM.h>
 
 //constants
 #define TIME1 31 //time in sec to mix, step 1
@@ -31,7 +33,7 @@
 
 // Relays. LOW is ON //
 #define MIXER       7 //mixer motor
-#define VALVE_PWR    6 //power cooling valve
+#define VALVE_PWR   6 //power cooling valve
 #define VALVE_OPEN  5 //open cooling valve
 #define BUZZER      4 //buzzer for alarm
 
@@ -82,13 +84,26 @@ DallasTemperature sensors(&oneWire);
 LiquidCrystal_I2C lcd(0x27,16,2);
 #endif //LCD
 
-//global vars
+// encoder //
+#define ENC_A 31 //PC6
+#define ENC_B 35 //PC2
+#define BTN_DELAY 200 //ms
+RotaryEncoder encoder(ENC_B, ENC_A);
+#define DATA_SIZE 5
+int16_t data[DATA_SIZE];
+char* names[] = {"TIME1:", "TEMP2:", "TEMP4:", "TIME5:", "TEMP6:"};
+
+
+//g lobal vars //
 volatile int step = 0;
 volatile int temp = 50;
 volatile int mix  = 0;
 volatile int cool = 0;
 volatile int buzz = 0;
 volatile int cntdown = 0;
+volatile int mode = 0;  //0 - scroll, 1 - change
+volatile int index = 0; //current element index
+
 
 //functions
 void SetBuzzer(int state)
@@ -299,6 +314,99 @@ void UpdateDisplay()
   #endif //LCD
 }
 
+void writeData(){
+    int address = index * 2;
+    byte datah = data[index] / 256;
+    byte datal = data[index] % 256;
+    EEPROM.write(address, datal);
+    EEPROM.write(address+1, datah);
+}
+
+void loadData(){
+  int address;
+  for(int i = 0; i < DATA_SIZE; i++){
+    address = i * 2;
+    byte datal = EEPROM.read(address);
+    byte datah = EEPROM.read(address+1);
+    data[i] = 256 * datah + datal;
+  }
+}
+
+void doConfig(){
+  loadData();
+  updateDisplayConf();
+
+  static int btnReleased = 0;
+  static int modeChanged = 0;
+  static int pos = 0;
+  static int newPos = 0;
+  while(1) {
+    if(digitalRead(BTN_START) == 1){
+      btnReleased = 1;
+    }
+
+    if(btnReleased && (digitalRead(BTN_START) == 0)){
+      int now = millis();
+      while (millis() - now < BTN_DELAY);
+      if(digitalRead(BTN_START) == 0){
+        //btn still pressed
+        btnReleased = 0;
+        modeChanged = 1;
+        if (mode) {
+          mode = 0;
+        } else {
+          mode = 1;
+        }
+      }
+    }
+
+    encoder.tick();
+    newPos = encoder.getPosition();
+    if ((pos != newPos) || (modeChanged)) {
+      if(modeChanged && !mode){
+        //save data on exit
+        writeData();
+      }
+      modeChanged = 0;
+      if (newPos > pos) {
+        if(mode){
+           data[index]++;
+        } else {
+          index++;
+          if (index >= DATA_SIZE) index = 0;
+        }
+      } else if (newPos < pos){
+        if (mode){
+          data[index]--;
+        } else {
+          index--;
+          if (index < 0) index = DATA_SIZE - 1;
+        }
+      }
+      pos = newPos;
+      updateDisplayConf();
+    }//mode or pos changed
+  }//while(1)
+}
+
+void updateDisplayConf(){
+    lcd.setCursor(0, 0);
+    lcd.print(names[index]);
+    lcd.setCursor(15, 0);
+    lcd.print(index);
+    lcd.print("  ");
+    lcd.setCursor(0, 1);
+    lcd.print(data[index]);
+    lcd.print("    ");
+    lcd.setCursor(13, 1);
+    if (mode) {
+      lcd.print("<->");
+    } else {
+      lcd.print("   ");
+    }
+}
+
+
 /////////////////////////////////////////////////////////////////
 //main app
 ////////////////////////////////////////////////////////////////
@@ -318,6 +426,8 @@ void setup() {
 
     /* Inputs */
     pinMode(BTN_START, INPUT_PULLUP);
+    pinMode(ENC_A, INPUT_PULLUP);
+    pinMode(ENC_B, INPUT_PULLUP);
 
     /* segment indicator */
     #ifdef LMD
@@ -347,6 +457,9 @@ void setup() {
 }
 
 void loop() {
+  //check if enter config mode
+  if(ReadBtn(BTN_START) == 1) doConfig();
+
 while(1) {
   //step 0
   //just wait for start button
