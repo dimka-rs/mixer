@@ -14,7 +14,7 @@
 // + define new id
 // + update names arran
 // + update checks and defauls section
-
+//#define DEBUG
 #define DATA_SIZE 7 //total params
 #define TIME1 31 //time in sec to mix, step 1
 #define TEMP2 40 //temp to cool to, step 2
@@ -103,8 +103,8 @@ LiquidCrystal_I2C lcd(0x27,16,2);
 #endif //LCD
 
 // encoder //
-#define ENC_A 31 //PC6
-#define ENC_B 35 //PC2
+#define ENC_A 8
+#define ENC_B 9
 #define BTN_DELAY 200 //ms
 RotaryEncoder encoder(ENC_B, ENC_A);
 
@@ -151,20 +151,27 @@ void SetCooler(int state)
   int t = 0;
   digitalWrite(VALVE_PWR, LOW); //power on
   if(state==1) {
+    Serial.print("Open valve, time=");
     digitalWrite(VALVE_OPEN, LOW); //start open
-    t = VLV_O;
+    t = data[VLV_O_ID];
+    Serial.println(t);
     cool=1;
   } else if(state==0) {
-    t = VLV_C;
+    Serial.print("Close valve, time=");
+    digitalWrite(VALVE_OPEN, HIGH);
+    t = data[VLV_C_ID];
+    Serial.println(t);
     cool=0;
   }
   while(t > 0){
     t--;
+    Serial.println(t);
     UpdateDisplay();
     delay(DELAY_1S);
   }
   digitalWrite(VALVE_OPEN, HIGH); //stop open
   digitalWrite(VALVE_PWR, HIGH); //power off
+  Serial.println("done");
 }
 
 void ReadTemp()
@@ -179,14 +186,15 @@ void ReadTemp()
   #endif
   //do some filtering
   if( t < FILTER_TEMP_MIN) {
-    t = FILTER_TEMP_MIN;
     Serial.print("Temperature too low! ");
     Serial.println(t);
+    t = FILTER_TEMP_MIN;
   } else if(t > FILTER_TEMP_MAX) {
-    t = FILTER_TEMP_MAX;
     Serial.print("Temperature too high! ");
     Serial.println(t);
+    t = FILTER_TEMP_MAX;
   }
+  temp = t;
   /*
   // debug - selfheating emulation
   if(cool==1) {
@@ -294,6 +302,7 @@ void UpdateDisplay()
   #ifdef LCD
   lcd.setCursor(0,0);
   lcd.print("T:");
+  if(temp < 100) lcd.print("0");
   if(temp < 10) lcd.print("0");
   lcd.print(temp);
 
@@ -341,6 +350,7 @@ void writeData(){
 }
 
 void loadData(){
+  Serial.println("Loading EEPROM...");
   int address;
   for(int i = 0; i < DATA_SIZE; i++){
     address = i * 2;
@@ -356,9 +366,16 @@ void loadData(){
   if(data[TEMP6_ID] <= 0) data[TEMP6_ID] = TEMP6;
   if(data[VLV_O_ID] <= 0) data[VLV_O_ID] = VLV_O;
   if(data[VLV_C_ID] <= 0) data[VLV_C_ID] = VLV_C;
+  for(int i=0; i < DATA_SIZE; i++){
+    Serial.print(names[i]);
+    Serial.print(" = ");
+    Serial.println(data[i]);
+  }
+  Serial.println("done");
 }
 
 void doConfig(){
+  Serial.println("Start config mode");
   updateDisplayConf();
 
   static int btnReleased = 0;
@@ -415,6 +432,7 @@ void doConfig(){
 }
 
 void updateDisplayConf(){
+    Serial.println("updateDisplayConf");
     lcd.setCursor(0, 0);
     lcd.print(names[index]);
     lcd.setCursor(15, 0);
@@ -440,26 +458,38 @@ void setup() {
     Serial.begin(115200);
     Serial.println("Init...");
 
-    loadData();
-    //check if enter config mode
-    if(ReadBtn(BTN_START) == 1) doConfig();
-
-    /* Outputs */
-    pinMode(MIXER, OUTPUT);
-    SetMixer(0);
-    pinMode(VALVE_PWR, OUTPUT);
-    pinMode(VALVE_OPEN, OUTPUT);
-    SetCooler(0);
-    pinMode(BUZZER, OUTPUT);
-    SetBuzzer(0);
-
+    /* LCD indicator */
+    #ifdef LCD
+    Serial.println("LCD");
+    lcd.init();
+    lcd.backlight();
+    #endif //LCD
+    
     /* Inputs */
+    Serial.println("inputs");
     pinMode(BTN_START, INPUT_PULLUP);
     pinMode(ENC_A, INPUT_PULLUP);
     pinMode(ENC_B, INPUT_PULLUP);
 
+    loadData();
+    //check if enter config mode
+    if(ReadBtn(BTN_START) == 1) doConfig();
+    
+    /* Outputs */
+    Serial.println("outputs");
+    pinMode(MIXER, OUTPUT);
+    SetMixer(0);
+    pinMode(VALVE_PWR, OUTPUT);
+    pinMode(VALVE_OPEN, OUTPUT);
+    //SetCooler(0); //will be closed at step 0
+    Serial.println("buzzer");
+    pinMode(BUZZER, OUTPUT);
+    SetBuzzer(0);
+
+    
     /* segment indicator */
     #ifdef LMD
+    Serial.println("Segment");
     pinMode(LED_VCC, OUTPUT);
     digitalWrite(LED_VCC, LOW);    
     /* indicator is resetted and inited on every update */
@@ -469,18 +499,14 @@ void setup() {
     lmd.setDecode(0xFF);
     #endif //LMD
     
-    /* LCD indicator */
-    #ifdef LCD
-    lcd.init();
-    lcd.backlight();
-    #endif //LCD
-
     /* TEMP DS18B20 */
     #ifdef T_DS1820
+    Serial.println("DS18B20");
     sensors.begin();
     #endif //T_DS1820
 
-    UpdateDisplay();
+    //UpdateDisplay();
+    lcd.print("...");
     Serial.println("Main loop");
 }
 
@@ -546,7 +572,7 @@ while(1) {
   // ----- step 4 -----
   //cool until TEMP4
   SetStep(4);
-  SetCooler(1);
+  //SetCooler(1); already open
   while(temp > data[TEMP4_ID]) {
     UpdateDisplay(); //refreshes temp
     delay(DELAY_1S);
@@ -566,12 +592,13 @@ while(1) {
   //cooldown 1 deg/sec down to TEMP6
   
   SetStep(6);
-  SetCooler(1);
+  //SetCooler(1); already open
   int16_t target;
   UpdateDisplay(); //refreshes temp
   while(temp > data[TEMP6_ID]) {
     target = temp - 1;
     //control cooldown speed
+    /* disabled. done via partial open
     for(int i = 0 ; i < 59 ; i++){
       //this loop will try to hold temp stable for 1 minute
       UpdateDisplay(); //refreshes temp
@@ -582,6 +609,7 @@ while(1) {
       }
       delay(DELAY_1S);
     }
+    */
   }
 
   // ----- step 7 -----
