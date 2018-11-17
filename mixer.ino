@@ -53,7 +53,8 @@ RotaryEncoder encoder(ENC_B, ENC_A);
 volatile int step = 0;
 volatile int temp = 50;
 volatile int mix  = 0;
-volatile int cool = 0;
+volatile int vpwr = 0;
+volatile int vdir = 0;
 volatile int buzz = 0;
 volatile int cntdown = 0;
 volatile int mode = 0;  //0 - scroll, 1 - change
@@ -84,33 +85,37 @@ void SetMixer(int state)
   }
 }
 
-void SetCooler(int state)
+void SetValve(int offset)
 {
-  int t = 0;
+  if(conf[VALVE_INV_ID]) offset *= -1;
+  int t = abs(offset);
   digitalWrite(VALVE_PWR, LOW); //power on
-  if(state==0) {
-    //0 - disable cooling, OPEN BYPASS
+  vpwr = 1;
+  if(offset > 0) {
+    //decrease cooling, OPEN BYPASS
     Serial.print("Open valve, time=");
     digitalWrite(VALVE_OPEN, LOW); //start open
+    vdir = 0;
     t = conf[VALVE_TIME_ID];
     Serial.println(t);
-    cool=1;
-  } else if(state==1) {
-    //1 - enable cooling, CLOSE BYPASS
+  } else if(offset < 0) {
+    //increase cooling, CLOSE BYPASS
     Serial.print("Close valve, time=");
     digitalWrite(VALVE_OPEN, HIGH);
+    vdir = 1;
     t = conf[VALVE_TIME_ID];
     Serial.println(t);
-    cool=0;
   }
   while(t > 0){
     t--;
     Serial.println(t);
     UpdateDisplay();
-    delay(DELAY_1S);
+    if(DoCountdown == 0) delay(DELAY_1S);
   }
   digitalWrite(VALVE_OPEN, HIGH); //stop open
   digitalWrite(VALVE_PWR, HIGH); //power off
+  vdir = 0;
+  vpwr = 0;
   Serial.println("done");
 }
 
@@ -150,6 +155,7 @@ int ReadBtn(int btn)
 
 int DoCountdown()
 {
+  //delay for about 1 sec
   if(cntdown > 0) {
     cntdown -= 1;
     delay(DELAY_1S);
@@ -179,8 +185,10 @@ void UpdateDisplay()
   Serial.print(cntdown);
   Serial.print(", mix=");
   Serial.print(mix);
-  Serial.print(", cool=");
-  Serial.print(cool);
+  Serial.print(", vpwr=");
+  Serial.print(vpwr);
+  Serial.print(", vdir=");
+  Serial.print(vdir);
   Serial.print(", buzz=");
   Serial.print(buzz);
   Serial.println("");
@@ -213,10 +221,15 @@ void UpdateDisplay()
   }
 
   lcd.setCursor(6,1);
-  if(cool==1) {
-    lcd.print("COOL");
+  if(vpwr == 1) {
+    lcd.print("V");
   } else {
-    lcd.print("cool");
+    lcd.print("v");
+  }
+  if(vdir == 1) {
+    lcd.print("D");
+  } else {
+    lcd.print("d");
   }
   
   lcd.setCursor(12,1);
@@ -401,7 +414,7 @@ void setup() {
     SetMixer(0);
     pinMode(VALVE_PWR, OUTPUT);
     pinMode(VALVE_OPEN, OUTPUT);
-    //SetCooler(0); //will be closed at step 0
+    //Valve will be set at step 0
     Serial.println("buzzer");
     pinMode(BUZZER, OUTPUT);
     SetBuzzer(0);
@@ -420,7 +433,8 @@ while(1) {
   delay(300);
   SetMixer(0);
   delay(300);
-  SetCooler(0);
+  //Open bybass, no cooling so far
+  SetValve(conf[VALVE_TIME_ID]);
   SetStep(0);
 
   //wait for release
