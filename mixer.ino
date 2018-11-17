@@ -9,18 +9,7 @@
 #include "mixer.h"
 
 // constants //
-//#define DEBUG
-
-#define VLV_O 10 //time in sec to let valve partially open
-#define VLV_C 20 //time in sec to let valve fully close
-
-//indexes
-#define VLV_O_ID 10
-#define VLV_C_ID 11
-
-//#define DEBUG 1
-#define FILTER_TEMP_MIN 0
-#define FILTER_TEMP_MAX 100
+#define DEBUG
 #define DELAY_1S 950
 #define DELAY_POLL 200
 
@@ -134,13 +123,15 @@ void SetCooler(int state)
 {
   int t = 0;
   digitalWrite(VALVE_PWR, LOW); //power on
-  if(state==1) {
+  if(state==0) {
+    //0 - disable cooling, OPEN BYPASS
     Serial.print("Open valve, time=");
     digitalWrite(VALVE_OPEN, LOW); //start open
     t = conf[VALVE_TIME_ID];
     Serial.println(t);
     cool=1;
-  } else if(state==0) {
+  } else if(state==1) {
+    //1 - enable cooling, CLOSE BYPASS
     Serial.print("Close valve, time=");
     digitalWrite(VALVE_OPEN, HIGH);
     t = conf[VALVE_TIME_ID];
@@ -170,12 +161,12 @@ void ReadTemp()
   #endif
   //do some filtering
   temp_err = ' ';
-  if( t < FILTER_TEMP_MIN) {
+  if( t < conf[TEMP_MIN_ID]) {
     temp_err = 'E';
     Serial.print("Temperature too low! ");
     Serial.println(t);
     //t = FILTER_TEMP_MIN;
-  } else if(t > FILTER_TEMP_MAX) {
+  } else if(t > conf[TEMP_MAX_ID]) {
     temp_err = 'E';
     Serial.print("Temperature too high! ");
     Serial.println(t);
