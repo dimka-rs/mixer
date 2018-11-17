@@ -6,32 +6,17 @@
 #include <LiquidCrystal_I2C.h>
 #include <RotaryEncoder.h>
 #include <EEPROM.h>
+#include "mixer.h"
 
 // constants //
-// on adding new param:
-// + increment DATA_SIZE
-// + define new param
-// + define new id
-// + update names arran
-// + update checks and defauls section
 //#define DEBUG
-#define DATA_SIZE 7 //total params
-#define TIME1 31 //time in sec to mix, step 1
-#define TEMP2 40 //temp to cool to, step 2
-#define TEMP4 34 //temp to cool to, step 4
-#define TIME5 50 //time in sec to mix, step 5
-#define TEMP6 28 //temp to cool to, step 6
+
 #define VLV_O 10 //time in sec to let valve partially open
 #define VLV_C 20 //time in sec to let valve fully close
 
 //indexes
-#define TIME1_ID 0
-#define TEMP2_ID 1
-#define TEMP4_ID 2
-#define TIME5_ID 3
-#define TEMP6_ID 4
-#define VLV_O_ID 5
-#define VLV_C_ID 6
+#define VLV_O_ID 10
+#define VLV_C_ID 11
 
 //#define DEBUG 1
 #define FILTER_TEMP_MIN 0
@@ -110,8 +95,6 @@ RotaryEncoder encoder(ENC_B, ENC_A);
 
 
 // global vars //
-int16_t data[DATA_SIZE];
-char* names[] = {"TIME1:", "TEMP2:", "TEMP4:", "TIME5:", "TEMP6:", "VLV-O:", "VLV-C:"};
 
 volatile int step = 0;
 volatile int temp = 50;
@@ -121,6 +104,7 @@ volatile int buzz = 0;
 volatile int cntdown = 0;
 volatile int mode = 0;  //0 - scroll, 1 - change
 volatile int index = 0; //current element index
+volatile char temp_err = 'E';
 
 
 //functions
@@ -153,13 +137,13 @@ void SetCooler(int state)
   if(state==1) {
     Serial.print("Open valve, time=");
     digitalWrite(VALVE_OPEN, LOW); //start open
-    t = data[VLV_O_ID];
+    t = conf[VALVE_TIME_ID];
     Serial.println(t);
     cool=1;
   } else if(state==0) {
     Serial.print("Close valve, time=");
     digitalWrite(VALVE_OPEN, HIGH);
-    t = data[VLV_C_ID];
+    t = conf[VALVE_TIME_ID];
     Serial.println(t);
     cool=0;
   }
@@ -185,14 +169,17 @@ void ReadTemp()
   int16_t t = tc.readCelsius();
   #endif
   //do some filtering
+  temp_err = ' ';
   if( t < FILTER_TEMP_MIN) {
+    temp_err = 'E';
     Serial.print("Temperature too low! ");
     Serial.println(t);
-    t = FILTER_TEMP_MIN;
+    //t = FILTER_TEMP_MIN;
   } else if(t > FILTER_TEMP_MAX) {
+    temp_err = 'E';
     Serial.print("Temperature too high! ");
     Serial.println(t);
-    t = FILTER_TEMP_MAX;
+    //t = FILTER_TEMP_MAX;
   }
   temp = t;
   /*
@@ -302,20 +289,20 @@ void UpdateDisplay()
   #ifdef LCD
   lcd.setCursor(0,0);
   lcd.print("T:");
-  if(temp < 100) lcd.print("0");
-  if(temp < 10) lcd.print("0");
+  if(temp < 100) lcd.print(" ");
+  if(temp < 10) lcd.print(" ");
   lcd.print(temp);
+  lcd.print(temp_err);
 
   lcd.setCursor(6,0);
   lcd.print("C:");
-  if(cntdown < 100) lcd.print("0");
-  if(cntdown < 10)  lcd.print("0");
-   
+  if(cntdown < 100) lcd.print(" ");
+  if(cntdown < 10)  lcd.print(" ");
   lcd.print(cntdown);
 
   lcd.setCursor(12,0);
   lcd.print("S:");
-  if(step < 10) lcd.print("0");
+  if(step < 10) lcd.print(" ");
   lcd.print(step);
   
   lcd.setCursor(0,1);
@@ -326,51 +313,62 @@ void UpdateDisplay()
   }
 
   lcd.setCursor(6,1);
-  if(buzz==1) {
-    lcd.print("BUZZ");
-  } else {
-    lcd.print("buzz");
-  }
-
-  lcd.setCursor(12,1);
   if(cool==1) {
     lcd.print("COOL");
   } else {
     lcd.print("cool");
   }
+  
+  lcd.setCursor(12,1);
+  if(buzz==1) {
+    lcd.print("BUZZ");
+  } else {
+    lcd.print("buzz");
+  }
   #endif //LCD
 }
 
 void writeData(){
-    int address = index * 2;
-    byte datah = data[index] / 256;
-    byte datal = data[index] % 256;
-    EEPROM.write(address, datal);
-    EEPROM.write(address+1, datah);
+    int address = CONF_SIZE + (index * sizeof(pgm_step));
+    EEPROM.write(address, pgm[index].op);
+    byte paramh = pgm[index].param / 256;
+    byte paraml = pgm[index].param % 256;
+    EEPROM.write(address+1, paraml);
+    EEPROM.write(address+2, paramh);
 }
 
 void loadData(){
   Serial.println("Loading EEPROM...");
-  int address;
-  for(int i = 0; i < DATA_SIZE; i++){
-    address = i * 2;
-    byte datal = EEPROM.read(address);
-    byte datah = EEPROM.read(address+1);
-    data[i] = 256 * datah + datal;
+  
+  //overwrite default conf with stored params
+  for(int i = 0; i < CONF_SIZE; i++){
+    uint8_t t = EEPROM.read(i);
+    if(t != 0xFF)  conf[i] = t;
+    #ifdef DEBUG
+    Serial.print(conf_names[i]);
+    Serial.print(": ");
+    Serial.println(conf[i]);
+    #endif    
+  }
+
+  for(int i = 0; i < STEPS; i++){
+    int address = CONF_SIZE + (i * sizeof(pgm_step));
+    pgm[i].op = EEPROM.read(address);
+    byte paraml = EEPROM.read(address+1);
+    byte paramh = EEPROM.read(address+2);
+    pgm[i].param = 256 * paramh + paraml;
   }
   //checks & defaults
-  if(data[TIME1_ID] <= 0) data[TIME1_ID] = TIME1;
-  if(data[TEMP2_ID] <= 0) data[TEMP2_ID] = TEMP2;
-  if(data[TEMP4_ID] <= 0) data[TEMP4_ID] = TEMP4;
-  if(data[TIME5_ID] <= 0) data[TIME5_ID] = TIME5;
-  if(data[TEMP6_ID] <= 0) data[TEMP6_ID] = TEMP6;
-  if(data[VLV_O_ID] <= 0) data[VLV_O_ID] = VLV_O;
-  if(data[VLV_C_ID] <= 0) data[VLV_C_ID] = VLV_C;
-  for(int i=0; i < DATA_SIZE; i++){
-    Serial.print(names[i]);
-    Serial.print(" = ");
-    Serial.println(data[i]);
+  #ifdef DEBUG
+  for(int i = 0; i < STEPS; i++){
+    Serial.print(pgm_names[i]);
+    Serial.print(": ");
+    Serial.print(pgm[i].op);
+    Serial.print(": ");
+    Serial.print(pgm[i].param);
+    Serial.println();
   }
+  #endif
   Serial.println("done");
 }
 
@@ -412,17 +410,29 @@ void doConfig(){
       modeChanged = 0;
       if (newPos > pos) {
         if(mode){
-           data[index]++;
+          // edit mode, increase value
+          if(index < CONF_SIZE){
+            //TODO increase this conf
+          } else {
+            pgm[index - CONF_SIZE].param++;
+          }
         } else {
+          //scroll mode, increase index
           index++;
-          if (index >= DATA_SIZE) index = 0;
+          if (index >= MENU_COUNT) index = 0;
         }
       } else if (newPos < pos){
         if (mode){
-          data[index]--;
+          //edit mode, decrease params
+          if(index < CONF_SIZE){
+            //TODO decrease this conf
+          } else {
+            pgm[index - CONF_SIZE].param--;
+          }
         } else {
+          //scroll mode, decrease index
           index--;
-          if (index < 0) index = DATA_SIZE - 1;
+          if (index < 0) index = MENU_COUNT - 1;
         }
       }
       pos = newPos;
@@ -433,19 +443,29 @@ void doConfig(){
 
 void updateDisplayConf(){
     Serial.println("updateDisplayConf");
+    lcd.clear();
     lcd.setCursor(0, 0);
-    lcd.print(names[index]);
-    lcd.setCursor(15, 0);
-    lcd.print(index);
-    lcd.print("  ");
-    lcd.setCursor(0, 1);
-    lcd.print(data[index]);
-    lcd.print("    ");
-    lcd.setCursor(13, 1);
-    if (mode) {
-      lcd.print("<->");
+    if(index < CONF_SIZE) {
+      //display conf
+      lcd.print(conf_names[index]);
+      if(index < 10) {
+        lcd.setCursor(12, 0);
+      } else {
+        lcd.setCursor(11, 0);
+      }
+      lcd.print(index);
+      lcd.print("/");
+      lcd.print(CONF_SIZE);
     } else {
-      lcd.print("   ");
+      //display steps
+      lcd.setCursor(0, 1);
+      lcd.print(pgm_names[pgm[index - CONF_SIZE].op]);
+      lcd.setCursor(13, 1);
+      if (mode) {
+        lcd.print("<->");
+      } else {
+        lcd.print("   ");
+      }
     }
 }
 
@@ -512,7 +532,6 @@ void setup() {
 
 void loop() {
 
-
 while(1) {
   //step 0
   //just wait for start button
@@ -533,99 +552,64 @@ while(1) {
     UpdateDisplay();
     delay(DELAY_POLL);
   }
-
-  // ----- step 1 -----
-  //mix for TIME1
-  SetStep(1);
+  // Start mixer, it will work all the time
   SetMixer(1);
-  cntdown = data[TIME1_ID];
-  while(DoCountdown()) {
-    UpdateDisplay();
-    // no delay here - DoCountdown does it
-  }
-
-  // ----- step 2 -----
-  //start cooling until TEMP2
-  SetStep(2);
-  SetCooler(1);
-  while(temp > data[TEMP2_ID]) {
-    UpdateDisplay(); //refreshes temp
-    delay(DELAY_1S);
-  }
-
-  // ----- step 3 -----
-  //wait for button
-  SetStep(3);
-  SetBuzzer(1);
-  //wait for release
-  while(ReadBtn(BTN_START) == 1) {
-    UpdateDisplay();
-    delay(DELAY_1S);
-  }
-  //wait for press
-  while(ReadBtn(BTN_START) == 0) {
-    UpdateDisplay();
-    delay(DELAY_POLL);
-  }
-  SetBuzzer(0);
-
-  // ----- step 4 -----
-  //cool until TEMP4
-  SetStep(4);
-  //SetCooler(1); already open
-  while(temp > data[TEMP4_ID]) {
-    UpdateDisplay(); //refreshes temp
-    delay(DELAY_1S);
-  }
-
-  // ----- step 5 -----
-  //mix for TIME5
-  SetStep(5);
-  SetMixer(1);
-  cntdown = data[TIME5_ID];
-  while(DoCountdown()) {
-    UpdateDisplay();
-    // no delay here - DoCountdown does it
-  }
-
-  // ----- step 6 -----
-  //cooldown 1 deg/sec down to TEMP6
   
-  SetStep(6);
-  //SetCooler(1); already open
-  int16_t target;
-  UpdateDisplay(); //refreshes temp
-  while(temp > data[TEMP6_ID]) {
-    target = temp - 1;
-    //control cooldown speed
-    /* disabled. done via partial open
-    for(int i = 0 ; i < 59 ; i++){
-      //this loop will try to hold temp stable for 1 minute
-      UpdateDisplay(); //refreshes temp
-      if (temp <= target){
-        SetCooler(0);
-      } else {
-        SetCooler(1); 
+  //loop through program  
+  for(uint8_t s = 1; s <= STEPS; s++){ 
+    SetStep(s);
+    uint8_t op = pgm[s-1].op;
+    uint16_t param = pgm[s-1].param;
+    
+    #ifdef DEBUG
+    Serial.print("op: ");
+    Serial.print(op);
+    Serial.print(", param: ");
+    Serial.println(param);
+    #endif
+    
+    if(op == OP_WAIT){
+      // turn signal on and wait for button
+      SetBuzzer(1);
+      //wait for release
+      while(ReadBtn(BTN_START) == 1) {
+        UpdateDisplay();
+        delay(DELAY_1S);
       }
-      delay(DELAY_1S);
+      //wait for press
+      while(ReadBtn(BTN_START) == 0) {
+        UpdateDisplay();
+        delay(DELAY_POLL);
+      }
+      SetBuzzer(0);
+    } //end OP_WAIT
+    else if(op == OP_TIME){
+      //keep temp for given time
+      cntdown = param;
+      while(DoCountdown()) {
+        UpdateDisplay();
+        // no delay here - DoCountdown does it
+      }
+    } // end OP_TIME
+    else if(op == OP_TEMP){
+      //keep given temp regardless of time
+      while(temp > param) {
+        UpdateDisplay(); //refreshes temp
+        delay(DELAY_1S); //     
+      }
+    } // end OP_TEMP
+    else {
+      // wrong op code, exit loop
+      Serial.print("Wrong opcode: ");
+      Serial.println(op);
+      break;
     }
-    */
-  }
 
-  // ----- step 7 -----
-  //buzz until button pressed
-  SetStep(7);
-  SetBuzzer(1);
-  //wait for release
-  while(ReadBtn(BTN_START) == 1) {
-    UpdateDisplay();
-    delay(DELAY_1S);
+  //end of  pgm for 
   }
-  //wait for press
-  while(ReadBtn(BTN_START) == 0) {
-    UpdateDisplay();
-    delay(DELAY_POLL);
-  }
-  //return to step 0
+  
+//end of while(1)
 }
+
+//end of void loop()
 }
