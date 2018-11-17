@@ -49,7 +49,7 @@ RotaryEncoder encoder(ENC_B, ENC_A);
 
 
 // global vars //
-
+volatile int target = 0;
 volatile int step = 0;
 volatile int temp = 50;
 volatile int mix  = 0;
@@ -125,20 +125,28 @@ void ReadTemp()
   #ifdef T_MAX6675
   t = tc.readCelsius();
   #endif
-  //do some filtering
+  //check range
   temp_err = ' ';
   if( t < conf[TEMP_MIN_ID]) {
     temp_err = 'E';
     Serial.print("Temperature too low! ");
     Serial.println(t);
-    //t = FILTER_TEMP_MIN;
-  } else if(t > conf[TEMP_MAX_ID]) {
+  } else
+  if(t > conf[TEMP_MAX_ID]) {
     temp_err = 'E';
     Serial.print("Temperature too high! ");
     Serial.println(t);
-    //t = FILTER_TEMP_MAX;
   }
   temp = t;
+  //TODO: add averaging
+  if(temp > target){
+    int offset = (temp - target) * conf[TEMP_TIME_ID];
+    SetValve(offset);
+  } else
+  if(temp < target) {
+    int offset = (target - temp) * conf[TEMP_TIME_ID];
+    SetValve(offset);
+  } 
 }
 
 int ReadBtn(int btn)
@@ -263,6 +271,8 @@ void loadData(){
     Serial.println(conf[i]);
     #endif    
   }
+  // target temperature set to maximum allowed
+  target = conf[TEMP_MAX_ID];
 
   for(int i = 0; i < STEPS; i++){
     int address = CONF_SIZE + (i * sizeof(pgm_step));
@@ -488,7 +498,8 @@ while(1) {
     } // end OP_TIME
     else if(op == OP_TEMP){
       //keep given temp regardless of time
-      while(temp > param) {
+      target = param;
+      while(temp > target) {
         UpdateDisplay(); //refreshes temp
         delay(DELAY_1S); //     
       }
