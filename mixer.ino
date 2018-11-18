@@ -6,15 +6,13 @@
 #include "mixer.h"
 
 // constants //
-#define ERASE_EEPROM
-#define DEBUG
+//#define ERASE_EEPROM
+//#define DEBUG
 #define LCD
 #define T_MAX6675
 #define DELAY_1S 950
-#define DELAY_POLL 480
+#define DELAY_POLL 200
 #define TEMP_AVG_SIZE 3
-
-
 
 // Relays. LOW is ON //
 #define MIXER       7 //mixer motor
@@ -86,63 +84,75 @@ void SetMixer(int state)
   }
 }
 
-void SetValve(int offset)
-{
+
+
+
+int DriveValve(){
+  int offset = 0;
+  //control valve once in temp_intvl
+  if(pgm[step].op == OP_SILENT) return 0;
+  
+  if(temp_intvl > conf[TEMP_INTVL_ID]){ 
+    temp_intvl = 0;
+    offset = target - temp;
+  } else {
+    temp_intvl++;
+  }
+
+  if(offset == 0) return 0;
+  
   if(conf[VALVE_INV_ID]) offset *= -1;
-  int t = abs(offset);
+  #ifdef DEBUG
+  Serial.print("Offset: ");
+  Serial.println(offset);
+  #endif
   digitalWrite(VALVE_PWR, LOW); //power on
   vpwr = 1;
   if(offset > 0) {
+    offset = 0;
     //decrease cooling, OPEN BYPASS
-    Serial.print("Open valve, time=");
+    Serial.println("Open valve");
     digitalWrite(VALVE_OPEN, LOW); //start open
     vdir = 0;
-    t = conf[VALVE_TIME_ID];
-    Serial.println(t);
   } else if(offset < 0) {
+    offset = 0;
     //increase cooling, CLOSE BYPASS
-    Serial.print("Close valve, time=");
+    Serial.println("Close valve");
     digitalWrite(VALVE_OPEN, HIGH);
-    vdir = 1;
-    t = conf[VALVE_TIME_ID];
-    Serial.println(t);
+    vdir = 1;    
   }
-  while(t > 0){
-    t--;
-    Serial.println(t);
-    UpdateDisplay();
-    if(DoCountdown == 0) delay(DELAY_1S);
-  }
+  UpdateDisplay();
+  delay(DELAY_1S);
   digitalWrite(VALVE_OPEN, HIGH); //stop open
   digitalWrite(VALVE_PWR, HIGH); //power off
   vdir = 0;
   vpwr = 0;
-  Serial.println("done");
+  return 1;
 }
+
 
 void ReadTemp()
 {
+  temp_err = ' ';
   int16_t t;
   #ifdef T_MAX6675
   t = tc.readCelsius();
   #endif
-  //check range
-  temp_err = ' ';
-  if( t < conf[TEMP_MIN_ID]) {
+  //ignore values out of limits
+  if(t < conf[TEMP_MIN_ID]){
     temp_err = 'E';
-    Serial.print("Temperature too low! ");
-    Serial.println(t);
-  } else
-  if(t > conf[TEMP_MAX_ID]) {
+    return;
+  }
+  if(t > conf[TEMP_MAX_ID]){
     temp_err = 'E';
-    Serial.print("Temperature too high! ");
-    Serial.println(t);
+    return;
   }
   //averaging
   for(int i=1; i < TEMP_AVG_SIZE; i++) {
     temp_avg[i-1] = temp_avg[i];
   }
   temp_avg[TEMP_AVG_SIZE-1] = t;
+
   t = 0;
   int rem = 0;
   for(int i=0; i < TEMP_AVG_SIZE-1; i++) {
@@ -150,21 +160,15 @@ void ReadTemp()
      rem += temp_avg[i]%TEMP_AVG_SIZE;
   }
   t += rem / TEMP_AVG_SIZE;
-  temp = t;
-  //control valve once in temp_intvl
-  if(temp_intvl > conf[TEMP_INTVL_ID]){ 
-    temp_intvl = 0;
-    if(temp > target){
-      int offset = (temp - target) * conf[TEMP_TIME_ID];
-      SetValve(offset);
-    } else
-    if(temp < target) {
-      int offset = (target - temp) * conf[TEMP_TIME_ID];
-      SetValve(offset);
-    }
-  } else {
-    temp_intvl++;
+
+  //check range
+  if( t < conf[TEMP_MIN_ID]) {
+    temp_err = 'E';
+  } else
+  if(t > conf[TEMP_MAX_ID]) {
+    temp_err = 'E';
   }
+  temp = t;
 }
 
 int ReadBtn(int btn)
@@ -179,17 +183,6 @@ int ReadBtn(int btn)
   }
 }
 
-int DoCountdown()
-{
-  //delay for about 1 sec
-  if(cntdown > 0) {
-    cntdown -= 1;
-    delay(DELAY_1S);
-    return cntdown;
-  } else {
-    return 0;
-  }
-}
 
 void SetStep(int setto)
 {
@@ -200,8 +193,7 @@ void SetStep(int setto)
 
 void UpdateDisplay()
 {
-  ReadTemp();
-#ifdef  DEBUG
+  #ifdef  DEBUG
   Serial.print(millis());
   Serial.print(", Step=");
   Serial.print(step);
@@ -218,11 +210,12 @@ void UpdateDisplay()
   Serial.print(", buzz=");
   Serial.print(buzz);
   Serial.println("");
-#endif
+  #endif
   //0123456789ABCDEF
   //T:99E>>70 C:9876
   //S:12 TEMP   MVDB
   #ifdef LCD
+  lcd.clear();
   lcd.setCursor(0,0);
   lcd.print("T:");
   if(temp < 10) lcd.print(" ");
@@ -232,7 +225,6 @@ void UpdateDisplay()
   lcd.print(target);
   lcd.setCursor(10,0);
   lcd.print("C:");
-  if(cntdown < 10000) lcd.print(" ");
   if(cntdown < 1000) lcd.print(" ");
   if(cntdown < 100) lcd.print(" ");
   if(cntdown < 10)  lcd.print(" ");
@@ -241,10 +233,10 @@ void UpdateDisplay()
   lcd.setCursor(0,1);
   lcd.print("S:");
   if(step < 10) lcd.print(" ");
-  lcd.print(step+1);
+  lcd.print(step);
   
   lcd.setCursor(5,1);
-  lcd.print(pgm_names[pgm[step+1].op]);
+  lcd.print(pgm_names[pgm[step].op]);
 
   lcd.setCursor(12,1);
   if(mix==1) {
@@ -484,8 +476,10 @@ void setup() {
     pinMode(MIXER, OUTPUT);
     SetMixer(0);
     pinMode(VALVE_PWR, OUTPUT);
+    digitalWrite(VALVE_PWR, HIGH);
     pinMode(VALVE_OPEN, OUTPUT);
-    //Valve will be set at step 0
+    digitalWrite(VALVE_OPEN, HIGH);
+    
     Serial.println("buzzer");
     pinMode(BUZZER, OUTPUT);
     SetBuzzer(0);
@@ -495,74 +489,78 @@ void setup() {
     Serial.println("Main loop");
 }
 
+void DoMainLoop(){
+  ReadTemp();
+  UpdateDisplay();
+  if(cntdown > 0) cntdown--;
+  if(DriveValve() == 0){
+    //delay if valve did not do it before
+    delay(DELAY_1S);
+  }
+}
+
+
 void loop() {
 
 while(1) {
-  //step 0
-  //just wait for start button
   SetBuzzer(0);
   delay(300);
   SetMixer(0);
   delay(300);
-  //Open bybass, no cooling so far
-  SetValve(conf[VALVE_TIME_ID]);
-  SetStep(0);
-
-  //wait for release
-  while(ReadBtn(BTN_START) == 1) {
-    UpdateDisplay();
-    delay(DELAY_1S);
-  }
-  //wait for press
-  while(ReadBtn(BTN_START) == 0) {
-    UpdateDisplay();
-    delay(DELAY_POLL);
-  }
-  // Start mixer, it will work all the time
-  SetMixer(1);
   
   //loop through program  
-  for(uint8_t s = 1; s <= STEPS; s++){ 
+  for(uint8_t s = 0; s < STEPS; s++){ 
     SetStep(s);
-    uint8_t op = pgm[s-1].op;
-    uint16_t param = pgm[s-1].param;
+    uint8_t op = pgm[s].op;
+    uint16_t param = pgm[s].param;
     
     #ifdef DEBUG
     Serial.print("op: ");
-    Serial.print(op);
+    Serial.print(pgm_names[op]);
     Serial.print(", param: ");
     Serial.println(param);
     #endif
-    
-    if(op == OP_WAIT){
+
+    if(op == OP_SILENT){
+      SetMixer(0);
+      SetBuzzer(0);
+      //wait for release
+      while(ReadBtn(BTN_START) == 1) {
+        DoMainLoop();
+      }
+      //wait for press
+      while(ReadBtn(BTN_START) == 0) {
+        DoMainLoop();
+      }
+    } //OP_SILENT
+    else if(op == OP_WAIT){
+      SetMixer(1);
       // turn signal on and wait for button
       SetBuzzer(1);
       //wait for release
       while(ReadBtn(BTN_START) == 1) {
-        UpdateDisplay();
-        delay(DELAY_1S);
+        DoMainLoop();
       }
       //wait for press
       while(ReadBtn(BTN_START) == 0) {
-        UpdateDisplay();
-        delay(DELAY_POLL);
+        DoMainLoop();
       }
       SetBuzzer(0);
     } //end OP_WAIT
     else if(op == OP_TIME){
+      SetMixer(1);
       //keep temp for given time
       cntdown = param;
-      while(DoCountdown()) {
-        UpdateDisplay();
-        // no delay here - DoCountdown does it
+      while(cntdown) {
+        DoMainLoop();
       }
     } // end OP_TIME
     else if(op == OP_TEMP){
+      SetMixer(1);
       //keep given temp regardless of time
       target = param;
       while(temp > target) {
-        UpdateDisplay(); //refreshes temp
-        delay(DELAY_1S); //     
+        DoMainLoop();     
       }
     } // end OP_TEMP
     else {
