@@ -201,34 +201,39 @@ void UpdateDisplay()
   Serial.print(buzz);
   Serial.println("");
 #endif
-
+  //0123456789ABCDEF
+  //T:99E>>70 C:9876
+  //S:12 TEMP   MVDB
   #ifdef LCD
   lcd.setCursor(0,0);
   lcd.print("T:");
-  if(temp < 100) lcd.print(" ");
   if(temp < 10) lcd.print(" ");
   lcd.print(temp);
   lcd.print(temp_err);
-
-  lcd.setCursor(6,0);
+  lcd.print(">>");
+  lcd.print(target);
+  lcd.setCursor(10,0);
   lcd.print("C:");
+  if(cntdown < 10000) lcd.print(" ");
+  if(cntdown < 1000) lcd.print(" ");
   if(cntdown < 100) lcd.print(" ");
   if(cntdown < 10)  lcd.print(" ");
   lcd.print(cntdown);
 
-  lcd.setCursor(12,0);
+  lcd.setCursor(0,1);
   lcd.print("S:");
   if(step < 10) lcd.print(" ");
-  lcd.print(step);
+  lcd.print(step+1);
   
-  lcd.setCursor(0,1);
-  if(mix==1) {
-    lcd.print("MIX");
-  } else {
-    lcd.print("mix");
-  }
+  lcd.setCursor(5,1);
+  lcd.print(pgm_names[pgm[step+1].op]);
 
-  lcd.setCursor(6,1);
+  lcd.setCursor(12,1);
+  if(mix==1) {
+    lcd.print("M");
+  } else {
+    lcd.print("m");
+  }
   if(vpwr == 1) {
     lcd.print("V");
   } else {
@@ -239,12 +244,10 @@ void UpdateDisplay()
   } else {
     lcd.print("d");
   }
-  
-  lcd.setCursor(12,1);
   if(buzz==1) {
-    lcd.print("BUZZ");
+    lcd.print("B");
   } else {
-    lcd.print("buzz");
+    lcd.print("b");
   }
   #endif //LCD
 }
