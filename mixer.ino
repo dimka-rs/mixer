@@ -6,15 +6,15 @@
 #include "mixer.h"
 
 // constants //
+#define ERASE_EEPROM
 #define DEBUG
 #define LCD
 #define T_MAX6675
 #define DELAY_1S 950
-#define DELAY_POLL 200
+#define DELAY_POLL 480
+#define TEMP_AVG_SIZE 3
 
-/////////////////////////////////////////////
-// do not touch text below!
-////////////////////////////////////////////
+
 
 // Relays. LOW is ON //
 #define MIXER       7 //mixer motor
@@ -59,8 +59,9 @@ volatile int buzz = 0;
 volatile int cntdown = 0;
 volatile int mode = 0;  //0 - scroll, 1 - change
 volatile int index = 0; //current element index
+volatile int temp_intvl = 0;
 volatile char temp_err = 'E';
-
+int temp_avg[TEMP_AVG_SIZE];
 
 //functions
 void SetBuzzer(int state)
@@ -137,16 +138,33 @@ void ReadTemp()
     Serial.print("Temperature too high! ");
     Serial.println(t);
   }
+  //averaging
+  for(int i=1; i < TEMP_AVG_SIZE; i++) {
+    temp_avg[i-1] = temp_avg[i];
+  }
+  temp_avg[TEMP_AVG_SIZE-1] = t;
+  t = 0;
+  int rem = 0;
+  for(int i=0; i < TEMP_AVG_SIZE-1; i++) {
+     t += temp_avg[i]/TEMP_AVG_SIZE;
+     rem += temp_avg[i]%TEMP_AVG_SIZE;
+  }
+  t += rem / TEMP_AVG_SIZE;
   temp = t;
-  //TODO: add averaging
-  if(temp > target){
-    int offset = (temp - target) * conf[TEMP_TIME_ID];
-    SetValve(offset);
-  } else
-  if(temp < target) {
-    int offset = (target - temp) * conf[TEMP_TIME_ID];
-    SetValve(offset);
-  } 
+  //control valve once in temp_intvl
+  if(temp_intvl > conf[TEMP_INTVL_ID]){ 
+    temp_intvl = 0;
+    if(temp > target){
+      int offset = (temp - target) * conf[TEMP_TIME_ID];
+      SetValve(offset);
+    } else
+    if(temp < target) {
+      int offset = (target - temp) * conf[TEMP_TIME_ID];
+      SetValve(offset);
+    }
+  } else {
+    temp_intvl++;
+  }
 }
 
 int ReadBtn(int btn)
@@ -253,20 +271,27 @@ void UpdateDisplay()
 }
 
 void writeData(){
+  if(index < CONF_SIZE){
+    EEPROM.write(index, conf[index]);
+  } else {
     int address = CONF_SIZE + (index * sizeof(pgm_step));
     EEPROM.write(address, pgm[index].op);
     byte paramh = pgm[index].param / 256;
     byte paraml = pgm[index].param % 256;
     EEPROM.write(address+1, paraml);
     EEPROM.write(address+2, paramh);
+  }
 }
 
 void loadData(){
-  Serial.println("Loading EEPROM...");
+  Serial.println("Loading CONF...");
   
   //overwrite default conf with stored params
+  uint8_t t;
   for(int i = 0; i < CONF_SIZE; i++){
-    uint8_t t = EEPROM.read(i);
+    Serial.print(i);
+    Serial.print(": ");
+    t = EEPROM.read(i);
     if(t != 0xFF)  conf[i] = t;
     #ifdef DEBUG
     Serial.print(conf_names[i]);
@@ -277,16 +302,19 @@ void loadData(){
   // target temperature set to maximum allowed
   target = conf[TEMP_MAX_ID];
 
+  Serial.println("Loading PGM...");
+  int p;
   for(int i = 0; i < STEPS; i++){
+    Serial.print(i);
+    Serial.print(": ");
     int address = CONF_SIZE + (i * sizeof(pgm_step));
-    pgm[i].op = EEPROM.read(address);
-    byte paraml = EEPROM.read(address+1);
-    byte paramh = EEPROM.read(address+2);
-    pgm[i].param = 256 * paramh + paraml;
-  }
-  //checks & defaults
-  #ifdef DEBUG
-  for(int i = 0; i < STEPS; i++){
+    p = EEPROM.read(address);
+    if(p != 0xFF){
+      pgm[i].op = p;
+      byte paraml = EEPROM.read(address+1);
+      byte paramh = EEPROM.read(address+2);
+      pgm[i].param = 256 * paramh + paraml;
+    }
     Serial.print(pgm_names[pgm[i].op]);
     Serial.print(": ");
     Serial.print(pgm[i].op);
@@ -294,7 +322,11 @@ void loadData(){
     Serial.print(pgm[i].param);
     Serial.println();
   }
-  #endif
+  
+  //fill temp_avg for a start
+  for(int i = 0; i < TEMP_AVG_SIZE; i++){
+    temp_avg[i] = conf[TEMP_MAX_ID];
+  }
   Serial.println("done");
 }
 
@@ -338,7 +370,7 @@ void doConfig(){
         if(mode){
           // edit mode, increase value
           if(index < CONF_SIZE){
-            //TODO increase this conf
+            if(conf[index] < 0xff) conf[index]++;
           } else {
             pgm[index - CONF_SIZE].param++;
           }
@@ -351,7 +383,7 @@ void doConfig(){
         if (mode){
           //edit mode, decrease params
           if(index < CONF_SIZE){
-            //TODO decrease this conf
+            if(conf[index] > 0) conf[index]--;
           } else {
             pgm[index - CONF_SIZE].param--;
           }
@@ -368,31 +400,49 @@ void doConfig(){
 }
 
 void updateDisplayConf(){
-    Serial.println("updateDisplayConf");
     lcd.clear();
     lcd.setCursor(0, 0);
     if(index < CONF_SIZE) {
+      Serial.print(index);
+      Serial.print(": ");
+      Serial.print(conf_names[index]);
+      Serial.print(": ");
+      Serial.println(conf[index]);
       //display conf
       lcd.print(conf_names[index]);
-      if(index < 10) {
-        lcd.setCursor(12, 0);
-      } else {
-        lcd.setCursor(11, 0);
-      }
-      lcd.print(index);
+      lcd.setCursor(11, 0);
+      if(index+1 < 10) lcd.print(" ");
+      lcd.print(index+1);
       lcd.print("/");
       lcd.print(CONF_SIZE);
+      lcd.setCursor(0,1);
+      lcd.print(conf[index]);
     } else {
       //display steps
-      lcd.setCursor(0, 1);
+      Serial.print(index);
+      Serial.print(": ");
+      Serial.print(pgm_names[pgm[index - CONF_SIZE].op]);
+      Serial.print(": ");
+      Serial.println(pgm[index-CONF_SIZE].param);
+      lcd.setCursor(0, 0);
       lcd.print(pgm_names[pgm[index - CONF_SIZE].op]);
-      lcd.setCursor(13, 1);
-      if (mode) {
-        lcd.print("<->");
-      } else {
-        lcd.print("   ");
-      }
+      lcd.setCursor(11,0);
+      if(index+1-CONF_SIZE < 10) lcd.print(" ");
+      lcd.print(index+1-CONF_SIZE);
+      lcd.print("/");
+      lcd.print(STEPS);
+
+      lcd.setCursor(0,1);
+      lcd.print(pgm[index-CONF_SIZE].param);
     }
+    
+    lcd.setCursor(13, 1);
+    if (mode) {
+      lcd.print("<->");
+    } else {
+      lcd.print("   ");
+    }
+    
 }
 
 
@@ -416,6 +466,14 @@ void setup() {
     pinMode(BTN_START, INPUT_PULLUP);
     pinMode(ENC_A, INPUT_PULLUP);
     pinMode(ENC_B, INPUT_PULLUP);
+
+    #ifdef ERASE_EEPROM
+    Serial.print("Erasing EEPROM... ");
+    for (int i = 0 ; i < EEPROM.length() ; i++) {
+      EEPROM.write(i, 0xFF);
+    }
+    Serial.println("done");
+    #endif
 
     loadData();
     //check if enter config mode

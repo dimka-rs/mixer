@@ -33,15 +33,16 @@ struct pgm_step pgm[STEPS] = {
 static char* pgm_names[] = {"WAIT", "TEMP", "TIME"};
 
 #define CONF_SIZE 10
-uint8_t conf[CONF_SIZE] = {5, 95, 20, 0, 1, 0, 0, 0, 0, 0};
-
-//printable names for program params
 #define TEMP_MIN_ID 0
 #define TEMP_MAX_ID 1
 #define VALVE_TIME_ID 2
 #define VALVE_INV_ID 3
 #define TEMP_TIME_ID 4
-static char* conf_names[CONF_SIZE] = { "TEMP MIN", "TEMP MAX", "VALVE TIME", "VALVE INVERT", "TEMP*TIME" };
+#define TEMP_INTVL_ID 5
+uint8_t conf[CONF_SIZE] = {5, 95, 20, 0, 1, 10, 0, 0, 0, 0};
+
+//printable names for program params
+static char* conf_names[CONF_SIZE] = { "TEMP MIN", "TEMP MAX", "VALVE TIME", "VALVE INV", "TEMP*TIME", "TEMP INTVL", "NONE", "NONE", "NONE", "NONE" };
 
 #define MENU_COUNT CONF_SIZE + STEPS
 
