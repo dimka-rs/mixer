@@ -136,12 +136,9 @@ void SetValve(int offset){
   }
 }
 
-
+/*
 int DriveValve(){
   int offset = 0;
-  
-  
-
   if(offset == 0) return 0;
   
   if(conf[VALVE_INV_ID]) offset *= -1;
@@ -172,7 +169,7 @@ int DriveValve(){
   vpwr = 0;
   return 1;
 }
-
+*/
 
 void ReadTemp()
 {
@@ -563,10 +560,9 @@ void DoMainLoop(){
     } else {
       temp_intvl++;
     }
-    if(DriveValve() == 0){
-    //delay if valve did not do it before
-    delay(DELAY_1S);
-    }
+    //SetValve always delays 1s
+    SetValve();
+    
   }
 }
 
