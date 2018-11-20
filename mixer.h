@@ -41,10 +41,11 @@ static char* pgm_names[] = {"SILENT", "TEMP", "TIME", "WAIT", "ERR"};
 #define VALVE_TIME_ID 2
 #define VALVE_INV_ID 3
 #define TEMP_INTVL_ID 4
-uint8_t conf[CONF_SIZE] = {5, 95, 20, 0, 10, 0, 0, 0, 0, 0};
+#define TEMP_TIME_ID 5
+uint8_t conf[CONF_SIZE] = {5, 95, 20, 0, 10, 1, 0, 0, 0, 0};
 
 //printable names for program params
-static char* conf_names[CONF_SIZE] = {"TEMP MIN", "TEMP MAX", "VALVE TIME", "VALVE INV", "TEMP INTVL", "NONE", "NONE", "NONE", "NONE", "NONE"};
+static char* conf_names[CONF_SIZE] = {"TEMP MIN", "TEMP MAX", "VALVE TIME", "VALVE INV", "TEMP INTVL", "TEMP TIME", "NONE", "NONE", "NONE", "NONE"};
 
 #define MENU_COUNT CONF_SIZE + STEPS
 

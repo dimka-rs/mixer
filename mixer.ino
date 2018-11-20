@@ -12,7 +12,8 @@
 #define T_MAX6675
 #define DELAY_1S 950
 #define DELAY_POLL 200
-#define TEMP_AVG_SIZE 3
+#define DELAY_VALVE 100 //delay between valve relays switching, reduce EMI
+#define TEMP_AVG_SIZE 5
 
 // Relays. LOW is ON //
 #define MIXER       7 //mixer motor
@@ -55,6 +56,9 @@ volatile int vpwr = 0;
 volatile int vdir = 0;
 volatile int buzz = 0;
 volatile int cntdown = 0;
+volatile int valve_pos = 0;
+volatile int valve_tgt = 0;
+volatile int valve_act = 0;
 volatile int mode = 0;  //0 - scroll, 1 - change
 volatile int index = 0; //current element index
 volatile int temp_intvl = 0;
@@ -84,20 +88,59 @@ void SetMixer(int state)
   }
 }
 
+void SetValve(int offset){
+  int t = valve_tgt;
+  t += offset;
+  if(t < 0) t = 0;
+  if(t > conf[VALVE_TIME_ID]) t = conf[VALVE_TIME_ID];
+  valve_tgt = t;
 
+  if(valve_tgt > valve_pos){
+    if(valve_act == 1) {
+      //already moving up, just wait
+      delay(DELAY_1S);
+      valve_pos += 1;
+      return 1;
+    } else {
+      //start moving up
+      valve_act = 1;
+      digitalWrite(VALVE_OPEN, LOW);
+      delay(DELAY_VALVE);
+      digitalWrite(VALVE_PWR, LOW);
+      delay(DELAY_1S - DELAY_VALVE);
+      valve_pos = 1;
+      return 1;
+    }
+  } else if(valve_tgt < valve_pos){
+    if(valve_act == -1){
+      //already moving down, just wait
+      delay(DELAY_1S);
+      valve_pos -= 1;
+      return 1;
+    } else {
+      //start moving down
+      valve_act = -1;
+      digitalWrite(VALVE_OPEN, HIGH);
+      delay(DELAY_VALVE);
+      digitalWrite(VALVE_PWR, LOW);
+      delay(DELAY_1S - DELAY_VALVE);
+      valve_pos -= 1;
+    }
+  } else {
+    //target reached, stop
+    valve_act = 0;
+    digitalWrite(VALVE_PWR, HIGH);
+    delay(DELAY_VALVE);
+    digitalWrite(VALVE_OPEN, HIGH);
+    delay(DELAY_1S - DELAY_VALVE);
+  }
+}
 
 
 int DriveValve(){
   int offset = 0;
-  //control valve once in temp_intvl
-  if(pgm[step].op == OP_SILENT) return 0;
   
-  if(temp_intvl > conf[TEMP_INTVL_ID]){ 
-    temp_intvl = 0;
-    offset = target - temp;
-  } else {
-    temp_intvl++;
-  }
+  
 
   if(offset == 0) return 0;
   
@@ -213,7 +256,7 @@ void UpdateDisplay()
   #endif
   //0123456789ABCDEF
   //T:99E>>70 C:9876
-  //S:12 TEMP   MVDB
+  //S:12 TEMP V11>20
   #ifdef LCD
   lcd.clear();
   lcd.setCursor(0,0);
@@ -239,6 +282,7 @@ void UpdateDisplay()
   lcd.print(pgm_names[pgm[step].op]);
 
   lcd.setCursor(12,1);
+  /*
   if(mix==1) {
     lcd.print("M");
   } else {
@@ -258,7 +302,14 @@ void UpdateDisplay()
     lcd.print("B");
   } else {
     lcd.print("b");
-  }
+  }*/
+
+  lcd.print("V:");
+  if(valve_pos < 10) lcd.print(" ");
+  lcd.print(valve_pos);
+  lcd.print(">");
+  if(valve_tgt < 10) lcd.print(" ");
+  lcd.print(valve_tgt);
   #endif //LCD
 }
 
@@ -451,6 +502,7 @@ void setup() {
     Serial.println("LCD");
     lcd.init();
     lcd.backlight();
+    lcd.print("...");
     #endif //LCD
     
     /* Inputs */
@@ -484,8 +536,15 @@ void setup() {
     pinMode(BUZZER, OUTPUT);
     SetBuzzer(0);
     
-    //UpdateDisplay();
-    lcd.print("...");
+    lcd.print("Open valve...");
+    digitalWrite(VALVE_OPEN, LOW);
+    delay(DELAY_VALVE);
+    digitalWrite(VALVE_PWR, LOW);
+    delay(conf[VALVE_TIME_ID]);
+    digitalWrite(VALVE_PWR, HIGH);
+    delay(DELAY_VALVE);
+    digitalWrite(VALVE_OPEN, HIGH);
+    
     Serial.println("Main loop");
 }
 
@@ -493,9 +552,21 @@ void DoMainLoop(){
   ReadTemp();
   UpdateDisplay();
   if(cntdown > 0) cntdown--;
-  if(DriveValve() == 0){
+  
+  if(pgm[step].op == OP_SILENT){
+    delay(DELAY_1S);
+  } else {
+    //control valve once in temp_intvl
+    if(temp_intvl > conf[TEMP_INTVL_ID]){ 
+      temp_intvl = 0;
+      SetValve((temp - target) * conf[TEMP_TIME_ID]);
+    } else {
+      temp_intvl++;
+    }
+    if(DriveValve() == 0){
     //delay if valve did not do it before
     delay(DELAY_1S);
+    }
   }
 }
 
