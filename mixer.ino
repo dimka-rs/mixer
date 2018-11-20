@@ -560,9 +560,7 @@ void DoMainLoop(){
     } else {
       temp_intvl++;
     }
-    //SetValve always delays 1s
-    SetValve();
-    
+    //SetValve has done delay already
   }
 }
 
