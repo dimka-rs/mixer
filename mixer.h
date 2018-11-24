@@ -1,4 +1,5 @@
 #ifndef _MIXER_H_
+
 #define _MIXER_H_
 
 //TODO: packed
@@ -37,16 +38,22 @@ struct pgm_step pgm[STEPS] = {
 
 
 #define CONF_SIZE 10
+#define CONF_MIN -128
+#define CONF_MAX 127
 #define TEMP_MIN_ID 0
 #define TEMP_MAX_ID 1
 #define VALVE_TIME_ID 2
 #define VALVE_INV_ID 3
 #define TEMP_INTVL_ID 4
 #define TEMP_TIME_ID 5
-uint8_t conf[CONF_SIZE] = {5, 95, 20, 0, 10, 1, 0, 0, 0, 0};
+#define A_INT_ID 6
+#define A_FRA_ID 7
+#define B_INT_ID 8
+#define B_FRA_ID 9
+int8_t conf[CONF_SIZE] = {5, 95, 20, 0, 10, 1, 1, 0, 0, 0};
 
 //printable names for program params
-static char* conf_names[CONF_SIZE] = {"TEMP MIN", "TEMP MAX", "VALVE TIME", "VALVE INV", "TEMP INTVL", "TEMP TIME", "NONE", "NONE", "NONE", "NONE"};
+static char* conf_names[CONF_SIZE] = {"TEMP MIN", "TEMP MAX", "VALVE TIME", "VALVE INV", "TEMP INTVL", "TEMP TIME", "COEF A", "A/100", "COEF B", "B/100"};
 
 #define MENU_COUNT CONF_SIZE + STEPS
 

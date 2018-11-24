@@ -102,9 +102,9 @@ void SetValve(int offset){
       valve_pos += 1;
       return 1;
     } else {
-      //start moving up
+      //start moving up, CLOSING valve
       valve_act = 1;
-      digitalWrite(VALVE_OPEN, LOW);
+      digitalWrite(VALVE_OPEN, HIGH);
       delay(DELAY_VALVE);
       digitalWrite(VALVE_PWR, LOW);
       delay(DELAY_1S - DELAY_VALVE);
@@ -118,9 +118,9 @@ void SetValve(int offset){
       valve_pos -= 1;
       return 1;
     } else {
-      //start moving down
+      //start moving down, OPENING valve
       valve_act = -1;
-      digitalWrite(VALVE_OPEN, HIGH);
+      digitalWrite(VALVE_OPEN, LOW);
       delay(DELAY_VALVE);
       digitalWrite(VALVE_PWR, LOW);
       delay(DELAY_1S - DELAY_VALVE);
@@ -187,12 +187,13 @@ void ReadTemp()
     temp_err = 'E';
     return;
   }
-  //averaging
+  //shift new value in
   for(int i=1; i < TEMP_AVG_SIZE; i++) {
     temp_avg[i-1] = temp_avg[i];
   }
   temp_avg[TEMP_AVG_SIZE-1] = t;
 
+  //calc average
   t = 0;
   int rem = 0;
   for(int i=0; i < TEMP_AVG_SIZE-1; i++) {
@@ -208,7 +209,12 @@ void ReadTemp()
   if(t > conf[TEMP_MAX_ID]) {
     temp_err = 'E';
   }
-  temp = t;
+
+  //calc correction
+  float a = conf[A_INT_ID] + (float)conf[A_FRA_ID] / 100.0;
+  float b = conf[B_INT_ID] + (float)conf[B_FRA_ID] / 100.0;
+  float f = a * t + b;
+  temp = round(f);
 }
 
 int ReadBtn(int btn)
@@ -334,8 +340,6 @@ void writeData(){
     byte paramh = pgm[index-CONF_SIZE].param / 256;
     byte paraml = pgm[index-CONF_SIZE].param % 256;
     #ifdef DEBUG
-    Serial.print("_address=");
-    Serial.print(address);
     Serial.print(paramh);
     Serial.print(",");
     Serial.print(paraml);
@@ -358,11 +362,9 @@ void loadData(){
     Serial.print(": ");
     t = EEPROM.read(i);
     if(t != 0xFF)  conf[i] = t;
-    #ifdef DEBUG
     Serial.print(conf_names[i]);
     Serial.print(": ");
     Serial.println(conf[i]);
-    #endif    
   }
   // target temperature set to maximum allowed
   target = conf[TEMP_MAX_ID];
@@ -373,8 +375,6 @@ void loadData(){
     Serial.print(i);
     Serial.print(": ");
     int address = CONF_SIZE + (i * sizeof(pgm_step));
-    Serial.print("_addr=");
-    Serial.print(address);
     op = EEPROM.read(address);
     if(op != 0xFF){
       Serial.print("_OK_");
@@ -438,7 +438,7 @@ void doConfig(){
         if(mode){
           // edit mode, increase value
           if(index < CONF_SIZE){
-            if(conf[index] < 0xff) conf[index]++;
+            if(conf[index] < CONF_MAX) conf[index]++;
           } else {
             pgm[index - CONF_SIZE].param++;
           }
@@ -451,7 +451,7 @@ void doConfig(){
         if (mode){
           //edit mode, decrease params
           if(index < CONF_SIZE){
-            if(conf[index] > 0) conf[index]--;
+            if(conf[index] > CONF_MIN) conf[index]--;
           } else {
             pgm[index - CONF_SIZE].param--;
           }
@@ -482,7 +482,7 @@ void updateDisplayConf(){
       if(index < 10) lcd.print(" ");
       lcd.print(index);
       lcd.print("/");
-      lcd.print(CONF_SIZE);
+      lcd.print(CONF_SIZE-1);
       lcd.setCursor(0,1);
       lcd.print(conf[index]);
     } else {
@@ -498,8 +498,7 @@ void updateDisplayConf(){
       if(index-CONF_SIZE < 10) lcd.print(" ");
       lcd.print(index-CONF_SIZE);
       lcd.print("/");
-      lcd.print(STEPS);
-
+      lcd.print(STEPS-1);
       lcd.setCursor(0,1);
       lcd.print(pgm[index-CONF_SIZE].param);
     }
