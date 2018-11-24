@@ -7,12 +7,12 @@
 
 // constants //
 //#define ERASE_EEPROM
-//#define DEBUG
+//\#define DEBUG
 #define LCD
 #define T_MAX6675
 #define DELAY_1S 950
 #define DELAY_POLL 200
-#define DELAY_VALVE 100 //delay between valve relays switching, reduce EMI
+#define DELAY_VALVE 300 //delay between valve relays switching, reduce EMI
 #define TEMP_AVG_SIZE 5
 
 // Relays. LOW is ON //
@@ -108,7 +108,7 @@ void SetValve(int offset){
       delay(DELAY_VALVE);
       digitalWrite(VALVE_PWR, LOW);
       delay(DELAY_1S - DELAY_VALVE);
-      valve_pos = 1;
+      valve_pos += 1;
       return 1;
     }
   } else if(valve_tgt < valve_pos){
@@ -233,7 +233,7 @@ void SetStep(int setto)
 
 void UpdateDisplay()
 {
-  #ifdef  DEBUG
+  #ifdef  DEBUG1
   Serial.print(millis());
   Serial.print(", Step=");
   Serial.print(step);
@@ -278,7 +278,6 @@ void UpdateDisplay()
   lcd.setCursor(5,1);
   lcd.print(pgm_names[pgm[step].op]);
 
-  lcd.setCursor(12,1);
   /*
   if(mix==1) {
     lcd.print("M");
@@ -301,7 +300,8 @@ void UpdateDisplay()
     lcd.print("b");
   }*/
 
-  lcd.print("V:");
+  lcd.setCursor(10,1);
+  lcd.print("V");
   if(valve_pos < 10) lcd.print(" ");
   lcd.print(valve_pos);
   lcd.print(">");
@@ -312,14 +312,39 @@ void UpdateDisplay()
 
 void writeData(){
   if(index < CONF_SIZE){
+    #ifdef DEBUG
+    Serial.print("Write conf[");
+    Serial.print(index);
+    Serial.print("]=");
+    Serial.print(conf[index]);
+    Serial.println();
+    #endif
     EEPROM.write(index, conf[index]);
   } else {
-    int address = CONF_SIZE + (index * sizeof(pgm_step));
-    EEPROM.write(address, pgm[index].op);
-    byte paramh = pgm[index].param / 256;
-    byte paraml = pgm[index].param % 256;
+    int address = CONF_SIZE + ((index-CONF_SIZE) * sizeof(pgm_step));
+    #ifdef DEBUG
+    Serial.print("Write pgm[");
+    Serial.print(index-CONF_SIZE);
+    Serial.print("]=");
+    Serial.print(pgm[index-CONF_SIZE].op);
+    Serial.print(",");
+    #endif
+    EEPROM.write(address, pgm[index-CONF_SIZE].op);
+    delay(100);
+    byte paramh = pgm[index-CONF_SIZE].param / 256;
+    byte paraml = pgm[index-CONF_SIZE].param % 256;
+    #ifdef DEBUG
+    Serial.print("_address=");
+    Serial.print(address);
+    Serial.print(paramh);
+    Serial.print(",");
+    Serial.print(paraml);
+    Serial.println();
+    #endif
     EEPROM.write(address+1, paraml);
+    delay(100);
     EEPROM.write(address+2, paramh);
+    delay(100);
   }
 }
 
@@ -343,14 +368,17 @@ void loadData(){
   target = conf[TEMP_MAX_ID];
 
   Serial.println("Loading PGM...");
-  int p;
+  byte op;
   for(int i = 0; i < STEPS; i++){
     Serial.print(i);
     Serial.print(": ");
     int address = CONF_SIZE + (i * sizeof(pgm_step));
-    p = EEPROM.read(address);
-    if(p != 0xFF){
-      pgm[i].op = p;
+    Serial.print("_addr=");
+    Serial.print(address);
+    op = EEPROM.read(address);
+    if(op != 0xFF){
+      Serial.print("_OK_");
+      pgm[i].op = op;
       byte paraml = EEPROM.read(address+1);
       byte paramh = EEPROM.read(address+2);
       pgm[i].param = 256 * paramh + paraml;
@@ -452,7 +480,7 @@ void updateDisplayConf(){
       lcd.print(conf_names[index]);
       lcd.setCursor(11, 0);
       if(index+1 < 10) lcd.print(" ");
-      lcd.print(index+1);
+      lcd.print(index);
       lcd.print("/");
       lcd.print(CONF_SIZE);
       lcd.setCursor(0,1);
@@ -467,8 +495,8 @@ void updateDisplayConf(){
       lcd.setCursor(0, 0);
       lcd.print(pgm_names[pgm[index - CONF_SIZE].op]);
       lcd.setCursor(11,0);
-      if(index+1-CONF_SIZE < 10) lcd.print(" ");
-      lcd.print(index+1-CONF_SIZE);
+      if(index-CONF_SIZE < 10) lcd.print(" ");
+      lcd.print(index-CONF_SIZE);
       lcd.print("/");
       lcd.print(STEPS);
 
@@ -537,7 +565,7 @@ void setup() {
     digitalWrite(VALVE_OPEN, LOW);
     delay(DELAY_VALVE);
     digitalWrite(VALVE_PWR, LOW);
-    delay(conf[VALVE_TIME_ID]);
+    delay(conf[VALVE_TIME_ID]*1000);
     digitalWrite(VALVE_PWR, HIGH);
     delay(DELAY_VALVE);
     digitalWrite(VALVE_OPEN, HIGH);
@@ -550,7 +578,7 @@ void DoMainLoop(){
   UpdateDisplay();
   if(cntdown > 0) cntdown--;
   
-  if(pgm[step].op == OP_SILENT){
+  if(pgm[step].op == OP_STOP){
     delay(DELAY_1S);
   } else {
     //control valve once in temp_intvl
@@ -559,8 +587,8 @@ void DoMainLoop(){
       SetValve((temp - target) * conf[TEMP_TIME_ID]);
     } else {
       temp_intvl++;
+      SetValve(0);
     }
-    //SetValve has done delay already
   }
 }
 
@@ -586,7 +614,7 @@ while(1) {
     Serial.println(param);
     #endif
 
-    if(op == OP_SILENT){
+    if(op == OP_STOP){
       SetMixer(0);
       SetBuzzer(0);
       //wait for release
@@ -597,7 +625,7 @@ while(1) {
       while(ReadBtn(BTN_START) == 0) {
         DoMainLoop();
       }
-    } //OP_SILENT
+    } //OP_STOP
     else if(op == OP_WAIT){
       SetMixer(1);
       // turn signal on and wait for button

@@ -7,16 +7,20 @@ struct pgm_step {
     uint16_t param;
 };
 
-#define OP_SILENT 0 //just wait for button
+#define OP_STOP 0 //just wait for button
 #define OP_TEMP 1 //keep temperature
 #define OP_TIME 2 //count down
 #define OP_WAIT 3 //wait with buzzer
-#define OP_STOP 0xFF //stop on empty eeprom 
+#define OP_ERR 0xFF //stop on empty eeprom 
 #define STEPS 13
 #define PGM_SIZE (sizeof(pgm_step) * STEPS)
 
+// printable names for program step types
+#define PGM_NAMES_SIZE 5
+static char* pgm_names[] = {"STOP", "TEMP", "TIME", "WAIT", "ERR!"};
+
 struct pgm_step pgm[STEPS] = {
-  {OP_SILENT, 0}, //0
+  {OP_STOP, 0},  //0
   {OP_TIME, 31}, //1
   {OP_TEMP, 40}, //2
   {OP_WAIT, 0},  //3
@@ -31,9 +35,6 @@ struct pgm_step pgm[STEPS] = {
   {OP_WAIT, 0},  //12
 };
 
-// printable names for program step types
-#define PGM_NAMES_SIZE 5
-static char* pgm_names[] = {"SILENT", "TEMP", "TIME", "WAIT", "ERR"};
 
 #define CONF_SIZE 10
 #define TEMP_MIN_ID 0
