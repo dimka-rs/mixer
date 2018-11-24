@@ -67,6 +67,10 @@ volatile int index = 0; //current element index
 volatile int temp_intvl = 0;
 volatile char temp_err = 'E';
 int temp_avg[TEMP_AVG_SIZE];
+volatile float a;
+volatile float b;
+
+
 
 //functions
 void SetBuzzer(int state)
@@ -214,8 +218,6 @@ void ReadTemp()
   }
 
   //calc correction
-  float a = conf[A_INT_ID] + (float)conf[A_FRA_ID] / 100.0;
-  float b = conf[B_INT_ID] + (float)conf[B_FRA_ID] / 100.0;
   float f = a * t + b;
   temp = round(f);
 }
@@ -550,15 +552,17 @@ void setup() {
     //check if enter config mode
     if(ReadBtn(BTN_START) == 1) doConfig();
 
-    #ifdef DEBUG_TEMP
-    lcd.print("TEMP TEST...");
-    float a = conf[A_INT_ID] + (float)conf[A_FRA_ID] / 100.0;
-    float b = conf[B_INT_ID] + (float)conf[B_FRA_ID] / 100.0;
+    //calc temp correction coeffs
+    a = conf[A_INT_ID] + (float)conf[A_FRA_ID] / 100.0;
+    b = conf[B_INT_ID] + (float)conf[B_FRA_ID] / 100.0;
     Serial.print("a = ");
     Serial.print(a);
     Serial.print(", b = ");
     Serial.print(b);
     Serial.println();
+
+    #ifdef DEBUG_TEMP
+    lcd.print("TEMP TEST...");
     for(int i = 0; i < 100; i++){
       float f = a * i + b;
       Serial.print(i);
@@ -566,7 +570,6 @@ void setup() {
       Serial.print(round(f));
       Serial.println();
     }
-    while(1);
     #endif
     
     /* Outputs */
