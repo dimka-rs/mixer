@@ -7,7 +7,7 @@
 
 // constants //
 //#define ERASE_EEPROM
-//\#define DEBUG
+//#define DEBUG
 #define LCD
 #define T_MAX6675
 #define DELAY_1S 950
@@ -479,7 +479,7 @@ void updateDisplayConf(){
       //display conf
       lcd.print(conf_names[index]);
       lcd.setCursor(11, 0);
-      if(index+1 < 10) lcd.print(" ");
+      if(index < 10) lcd.print(" ");
       lcd.print(index);
       lcd.print("/");
       lcd.print(CONF_SIZE);
