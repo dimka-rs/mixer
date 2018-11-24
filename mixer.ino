@@ -5,9 +5,12 @@
 #include <EEPROM.h>
 #include "mixer.h"
 
-// constants //
+// debugs //
 //#define ERASE_EEPROM
 //#define DEBUG
+//#define DEBUG_TEMP
+
+// constants //
 #define LCD
 #define T_MAX6675
 #define DELAY_1S 950
@@ -546,6 +549,25 @@ void setup() {
     loadData();
     //check if enter config mode
     if(ReadBtn(BTN_START) == 1) doConfig();
+
+    #ifdef DEBUG_TEMP
+    lcd.print("TEMP TEST...");
+    float a = conf[A_INT_ID] + (float)conf[A_FRA_ID] / 100.0;
+    float b = conf[B_INT_ID] + (float)conf[B_FRA_ID] / 100.0;
+    Serial.print("a = ");
+    Serial.print(a);
+    Serial.print(", b = ");
+    Serial.print(b);
+    Serial.println();
+    for(int i = 0; i < 100; i++){
+      float f = a * i + b;
+      Serial.print(i);
+      Serial.print(" => ");
+      Serial.print(round(f));
+      Serial.println();
+    }
+    while(1);
+    #endif
     
     /* Outputs */
     Serial.println("outputs");
