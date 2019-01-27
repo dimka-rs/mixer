@@ -9,10 +9,11 @@
 //#define ERASE_EEPROM
 //#define DEBUG
 //#define DEBUG_TEMP
+//#define TEMP_EMUL
+//#define SKIP_VALVE
 
 // constants //
 #define LCD
-#define T_MAX6675
 #define DELAY_1S 950
 #define DELAY_POLL 200
 #define DELAY_VALVE 300 //delay between valve relays switching, reduce EMI
@@ -30,13 +31,11 @@
 //BTN_GND, black
 
 /* TEMP sensor MAX6675 */
-#ifdef T_MAX6675
 #define MAX_CK 13
 #define MAX_SO 12
 #define MAX_CS 3
 
 MAX6675 tc(MAX_CK, MAX_CS, MAX_SO);
-#endif //T_MAX6675
 
 // lcd on i2c expander, addr=0x27, size=16x2 //
 #ifdef LCD
@@ -51,9 +50,9 @@ RotaryEncoder encoder(ENC_B, ENC_A);
 
 
 // global vars //
+volatile double temp = 50;
 volatile int target = 0;
 volatile int step = 0;
-volatile int temp = 50;
 volatile int mix  = 0;
 volatile int vpwr = 0;
 volatile int vdir = 0;
@@ -65,10 +64,10 @@ volatile int valve_act = 0;
 volatile int mode = 0;  //0 - scroll, 1 - change
 volatile int index = 0; //current element index
 volatile int temp_intvl = 0;
-volatile char temp_err = 'E';
-int temp_avg[TEMP_AVG_SIZE];
-volatile float a;
-volatile float b;
+volatile char temp_err = '>'; //displays > or E
+double temp_avg[TEMP_AVG_SIZE];
+volatile double a;
+volatile double b;
 
 
 
@@ -180,11 +179,14 @@ int DriveValve(){
 
 void ReadTemp()
 {
-  temp_err = ' ';
-  int16_t t;
-  #ifdef T_MAX6675
-  t = tc.readCelsius();
-  #endif
+#ifndef TEMP_EMUL
+  temp_err = '>';
+  double t = tc.readCelsius();
+  //not sure if it works as expected, bit lib returns NAN if no sensor attached
+  if(t == NAN){
+    temp_err = 'E';
+    return;
+  }
   //ignore values out of limits
   if(t < conf[TEMP_MIN_ID]){
     temp_err = 'E';
@@ -202,12 +204,9 @@ void ReadTemp()
 
   //calc average
   t = 0;
-  int rem = 0;
   for(int i=0; i < TEMP_AVG_SIZE-1; i++) {
      t += temp_avg[i]/TEMP_AVG_SIZE;
-     rem += temp_avg[i]%TEMP_AVG_SIZE;
   }
-  t += rem / TEMP_AVG_SIZE;
 
   //check range
   if( t < conf[TEMP_MIN_ID]) {
@@ -218,8 +217,15 @@ void ReadTemp()
   }
 
   //calc correction
-  float f = a * t + b;
-  temp = round(f);
+  double f = a * t + b;
+  temp = f;
+#else //TEMP_EMUL
+  switch(millis()%30){ 
+    case  0 ... 9: temp = 98.7654321; break;
+    case 10 ... 19: temp = 1.123456789; break;
+    case 20 ... 29 : temp = 55.55555; break;
+  }
+#endif //TEMP_EMUL
 }
 
 int ReadBtn(int btn)
@@ -263,16 +269,15 @@ void UpdateDisplay()
   Serial.println("");
   #endif
   //0123456789ABCDEF
-  //T:99E>>70 C:9876
+  //T:99.0>70 C:9876
   //S:12 TEMP V11>20
   #ifdef LCD
   lcd.clear();
   lcd.setCursor(0,0);
   lcd.print("T:");
   if(temp < 10) lcd.print(" ");
-  lcd.print(temp);
+  lcd.print(temp, 1);
   lcd.print(temp_err);
-  lcd.print(">>");
   lcd.print(target);
   lcd.setCursor(10,0);
   lcd.print("C:");
@@ -584,7 +589,8 @@ void setup() {
     Serial.println("buzzer");
     pinMode(BUZZER, OUTPUT);
     SetBuzzer(0);
-    
+
+#ifndef SKIP_VALVE    
     lcd.print("Open valve...");
     digitalWrite(VALVE_OPEN, LOW);
     delay(DELAY_VALVE);
@@ -593,7 +599,8 @@ void setup() {
     digitalWrite(VALVE_PWR, HIGH);
     delay(DELAY_VALVE);
     digitalWrite(VALVE_OPEN, HIGH);
-    
+#endif // SKIP_VALVE
+
     Serial.println("Main loop");
 }
 
