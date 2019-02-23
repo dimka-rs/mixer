@@ -1,4 +1,4 @@
-#include <Wire.h> 
+#include <Wire.h>
 #include "max6675.h"
 #include <LiquidCrystal_I2C.h>
 #include <RotaryEncoder.h>
@@ -12,12 +12,7 @@
 //#define TEMP_EMUL
 //#define SKIP_VALVE
 
-// constants //
-#define LCD
-#define DELAY_1S 950
-#define DELAY_POLL 200
-#define DELAY_VALVE 300 //delay between valve relays switching, reduce EMI
-#define TEMP_AVG_SIZE 5
+// Hardware //
 
 // Relays. LOW is ON //
 #define MIXER       7 //mixer motor
@@ -30,24 +25,35 @@
 //BTN_RESET, red
 //BTN_GND, black
 
-/* TEMP sensor MAX6675 */
+// TEMP sensor MAX6675 //
 #define MAX_CK 13
 #define MAX_SO 12
 #define MAX_CS 3
 
-MAX6675 tc(MAX_CK, MAX_CS, MAX_SO);
-
-// lcd on i2c expander, addr=0x27, size=16x2 //
-#ifdef LCD
-LiquidCrystal_I2C lcd(0x27,16,2);
-#endif //LCD
-
 // encoder //
 #define ENC_A 8
 #define ENC_B 9
-#define BTN_DELAY 200 //ms
-RotaryEncoder encoder(ENC_B, ENC_A);
 
+// Turbidity sensor //
+#define TURBIDITY_PIN A7
+
+// constants //
+
+#define DELAY_1S 950
+#define DELAY_POLL 200
+#define DELAY_VALVE 300 //delay between valve relays switching, reduce EMI
+#define TEMP_AVG_SIZE 5
+#define BTN_DELAY 200 //ms
+
+
+// Temperature sensor //
+MAX6675 tc(MAX_CK, MAX_CS, MAX_SO);
+
+// lcd on i2c expander, addr=0x27, size=16x2 //
+LiquidCrystal_I2C lcd(0x27,16,2);
+
+// Encoder //
+RotaryEncoder encoder(ENC_B, ENC_A);
 
 // global vars //
 volatile double temp = 50;
@@ -68,10 +74,11 @@ volatile char temp_err = '>'; //displays > or E
 double temp_avg[TEMP_AVG_SIZE];
 volatile double a;
 volatile double b;
+volatile char turbidity = 0;
 
 
 
-//functions
+// functions //
 void SetBuzzer(int state)
 {
   if(state==1){
@@ -141,41 +148,6 @@ void SetValve(int offset){
     delay(DELAY_1S - DELAY_VALVE);
   }
 }
-
-/*
-int DriveValve(){
-  int offset = 0;
-  if(offset == 0) return 0;
-  
-  if(conf[VALVE_INV_ID]) offset *= -1;
-  #ifdef DEBUG
-  Serial.print("Offset: ");
-  Serial.println(offset);
-  #endif
-  digitalWrite(VALVE_PWR, LOW); //power on
-  vpwr = 1;
-  if(offset > 0) {
-    offset = 0;
-    //decrease cooling, OPEN BYPASS
-    Serial.println("Open valve");
-    digitalWrite(VALVE_OPEN, LOW); //start open
-    vdir = 0;
-  } else if(offset < 0) {
-    offset = 0;
-    //increase cooling, CLOSE BYPASS
-    Serial.println("Close valve");
-    digitalWrite(VALVE_OPEN, HIGH);
-    vdir = 1;    
-  }
-  UpdateDisplay();
-  delay(DELAY_1S);
-  digitalWrite(VALVE_OPEN, HIGH); //stop open
-  digitalWrite(VALVE_PWR, HIGH); //power off
-  vdir = 0;
-  vpwr = 0;
-  return 1;
-}
-*/
 
 void ReadTemp()
 {
@@ -268,10 +240,11 @@ void UpdateDisplay()
   Serial.print(buzz);
   Serial.println("");
   #endif
+
   //0123456789ABCDEF
   //T:99.0>70 C:9876
   //S:12 TEMP V11>20
-  #ifdef LCD
+
   lcd.clear();
   lcd.setCursor(0,0);
   lcd.print("T:");
@@ -292,29 +265,14 @@ void UpdateDisplay()
   lcd.print(step);
   
   lcd.setCursor(5,1);
-  lcd.print(pgm_names[pgm[step].op]);
-
-  /*
-  if(mix==1) {
-    lcd.print("M");
+  // show step type or turbidity analog read
+  if(turbidity == 0) {
+    turbidity = 1;
+    lcd.print(pgm_names[pgm[step].op]);
   } else {
-    lcd.print("m");
+    turbidity = 0;
+    lcd.print(analogRead(TURBIDITY_PIN));
   }
-  if(vpwr == 1) {
-    lcd.print("V");
-  } else {
-    lcd.print("v");
-  }
-  if(vdir == 1) {
-    lcd.print("D");
-  } else {
-    lcd.print("d");
-  }
-  if(buzz==1) {
-    lcd.print("B");
-  } else {
-    lcd.print("b");
-  }*/
 
   lcd.setCursor(10,1);
   lcd.print("V");
@@ -323,7 +281,6 @@ void UpdateDisplay()
   lcd.print(">");
   if(valve_tgt < 10) lcd.print(" ");
   lcd.print(valve_tgt);
-  #endif //LCD
 }
 
 void writeData(){
@@ -532,12 +489,10 @@ void setup() {
     Serial.println("Init...");
 
     /* LCD indicator */
-    #ifdef LCD
     Serial.println("LCD");
     lcd.init();
     lcd.backlight();
     lcd.print("...");
-    #endif //LCD
     
     /* Inputs */
     Serial.println("inputs");
