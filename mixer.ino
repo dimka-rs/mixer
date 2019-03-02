@@ -1,7 +1,7 @@
 #include <Wire.h>
-#include "max6675.h"
-#include <LiquidCrystal_I2C.h>
-#include <RotaryEncoder.h>
+#include "max6675.h"  //MAX6675 library by Adafruit Version 1.1.0
+#include <LiquidCrystal_I2C.h>  //LiquidCrystal I2C by Frank de Brabander Version 1.1.2
+#include <RotaryEncoder.h> //RotaryEncoder by Matthias Hertel Version 1.1.0
 #include <EEPROM.h>
 #include "mixer.h"
 
