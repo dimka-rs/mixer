@@ -43,6 +43,8 @@
 #define DELAY_POLL 200
 #define DELAY_VALVE 300 //delay between valve relays switching, reduce EMI
 #define TEMP_AVG_SIZE 5
+#define TURB_AVG_SIZE 5
+#define TURBIDITY_MAX 500
 #define BTN_DELAY 200 //ms
 
 
@@ -74,8 +76,9 @@ volatile char temp_err = '>'; //displays > or E
 double temp_avg[TEMP_AVG_SIZE];
 volatile double a;
 volatile double b;
-volatile char turbidity = 0;
-
+volatile double turbidity = 0;
+int turb_avg[TURB_AVG_SIZE];
+volatile char show_turbidity = 0;
 
 
 // functions //
@@ -197,6 +200,25 @@ void ReadTemp()
 #endif //TEMP_EMUL
 }
 
+void ReadTurbidity(){
+  int t = analogRead(TURBIDITY_PIN);
+
+  //shift new value in
+  for(int i=1; i < TURB_AVG_SIZE; i++) {
+    turb_avg[i-1] = turb_avg[i];
+  }
+  turb_avg[TURB_AVG_SIZE-1] = t;
+
+  //calc average
+  t = 0;
+  for(int i=0; i < TURB_AVG_SIZE-1; i++) {
+     t += turb_avg[i]/TURB_AVG_SIZE;
+  }
+  // convert to percent
+  t = t / (TURBIDITY_MAX / 100);
+  turbidity = t;
+}
+
 int ReadBtn(int btn)
 {
   int status = digitalRead(btn);
@@ -263,12 +285,13 @@ void UpdateDisplay()
   
   lcd.setCursor(5,1);
   // show step type or turbidity analog read
-  if(turbidity == 0) {
-    turbidity = 1;
+  if(show_turbidity == 0) {
+    show_turbidity = 1;
     lcd.print(pgm_names[pgm[step].op]);
   } else {
-    turbidity = 0;
-    lcd.print(analogRead(TURBIDITY_PIN));
+    show_turbidity = 0;
+    lcd.print(turbidity, 1);
+    lcd.print('%');
   }
 
   lcd.setCursor(10,1);
@@ -358,6 +381,10 @@ void loadData(){
   //fill temp_avg for a start
   for(int i = 0; i < TEMP_AVG_SIZE; i++){
     temp_avg[i] = conf[TEMP_MAX_ID];
+  }
+  //fill turb_avg
+  for(int i = 0; i < TURB_AVG_SIZE; i++){
+    turb_avg[i] = 0; //TODO: choose proper start value
   }
   Serial.println("done");
 }
@@ -558,6 +585,7 @@ void setup() {
 
 void DoMainLoop(){
   ReadTemp();
+  ReadTurbidity();
   UpdateDisplay();
   if(cntdown > 0) cntdown--;
   
