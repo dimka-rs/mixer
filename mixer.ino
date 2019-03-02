@@ -113,7 +113,6 @@ void SetValve(int offset){
       //already moving up, just wait
       delay(DELAY_1S);
       valve_pos += 1;
-      return 1;
     } else {
       //start moving up, CLOSING valve
       valve_act = 1;
@@ -122,14 +121,12 @@ void SetValve(int offset){
       digitalWrite(VALVE_PWR, LOW);
       delay(DELAY_1S - DELAY_VALVE);
       valve_pos += 1;
-      return 1;
     }
   } else if(valve_tgt < valve_pos){
     if(valve_act == -1){
       //already moving down, just wait
       delay(DELAY_1S);
       valve_pos -= 1;
-      return 1;
     } else {
       //start moving down, OPENING valve
       valve_act = -1;
