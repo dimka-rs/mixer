@@ -1,9 +1,11 @@
 #include <Wire.h>
 #include "max6675.h"  //MAX6675 library by Adafruit Version 1.1.0
-#include <LiquidCrystal_I2C.h>  //LiquidCrystal I2C by Frank de Brabander Version 1.1.2
 #include <RotaryEncoder.h> //RotaryEncoder by Matthias Hertel Version 1.1.0
 #include <EEPROM.h>
 #include "mixer.h"
+#include "hardware.h"
+#include "display.h"
+#include "prog.h"
 
 // debugs //
 //#define ERASE_EEPROM
@@ -11,31 +13,6 @@
 //#define DEBUG_TEMP
 //#define TEMP_EMUL
 //#define SKIP_VALVE
-
-// Hardware //
-
-// Relays. LOW is ON //
-#define MIXER       7 //mixer motor
-#define VALVE_PWR   6 //power cooling valve
-#define VALVE_OPEN  5 //open cooling valve
-#define BUZZER      4 //buzzer for alarm
-
-// Buttons //
-#define BTN_START  15 //A1, green
-//BTN_RESET, red
-//BTN_GND, black
-
-// TEMP sensor MAX6675 //
-#define MAX_CK 13
-#define MAX_SO 12
-#define MAX_CS 3
-
-// encoder //
-#define ENC_A 8
-#define ENC_B 9
-
-// Turbidity sensor //
-#define TURBIDITY_PIN A7
 
 // constants //
 
@@ -47,101 +24,87 @@
 #define TURBIDITY_MAX 500
 #define BTN_DELAY 200 //ms
 
-
 // Temperature sensor //
 MAX6675 tc(MAX_CK, MAX_CS, MAX_SO);
-
-// lcd on i2c expander, addr=0x27, size=16x2 //
-LiquidCrystal_I2C lcd(0x27,16,2);
 
 // Encoder //
 RotaryEncoder encoder(ENC_B, ENC_A);
 
 // global vars //
-volatile double temp = 50;
-volatile int target = 0;
-volatile int step = 0;
-volatile int mix  = 0;
-volatile int vpwr = 0;
-volatile int vdir = 0;
-volatile int buzz = 0;
-volatile int cntdown = 0;
-volatile int valve_pos = 0;
-volatile int valve_tgt = 0;
-volatile int valve_act = 0;
-volatile int mode = 0;  //0 - scroll, 1 - change
-volatile int index = 0; //current element index
-volatile int temp_intvl = 0;
-volatile char temp_err = '>'; //displays > or E
-double temp_avg[TEMP_AVG_SIZE];
+struct state_t st;
+
+// TODO: config only ? //
+uint8_t mode = 0;  //0 - scroll, 1 - change
+int8_t index = 0; //current element index, can be negative
+
 volatile double a;
 volatile double b;
-volatile double turbidity = 0;
+double temp_avg[TEMP_AVG_SIZE];
 int turb_avg[TURB_AVG_SIZE];
-volatile char show_turbidity = 0;
+
 
 
 // functions //
 void SetBuzzer(int state)
 {
-  if(state==1){
+  if(state == 1){
     digitalWrite(BUZZER, LOW);
-    buzz=1;
-  } else if(state==0){
+    st.buzz = 1;
+  } else if(state == 0){
     digitalWrite(BUZZER, HIGH);
-    buzz=0;
+    st.buzz = 0;
   }
 }
 
 void SetMixer(int state)
 {
-  if(state==1) {
+  if(state == 1) {
     digitalWrite(MIXER, LOW);
-    mix = 1;
-  } else if (state==0){
+    st.mix = 1;
+  } else if (state == 0){
     digitalWrite(MIXER, HIGH);
-    mix = 0;  
+    st.mix = 0;  
   }
 }
 
 void SetValve(int offset){
-  int t = valve_tgt;
+  int t = st.valve_tgt;
   t += offset;
   if(t < 0) t = 0;
-  if(t > conf[VALVE_TIME_ID]) t = conf[VALVE_TIME_ID];
-  valve_tgt = t;
+  if(t > ConfGet(VALVE_TIME_ID)) t = ConfGet(VALVE_TIME_ID);
+  st.valve_tgt = t;
 
-  if(valve_tgt > valve_pos){
-    if(valve_act == 1) {
+  if(st.valve_tgt > st.valve_pos){
+    if(st.valve_act == 1) {
       //already moving up, just wait
       delay(DELAY_1S);
-      valve_pos += 1;
+      st.valve_pos += 1;
     } else {
       //start moving up, CLOSING valve
-      valve_act = 1;
+      st.valve_act = 1;
       digitalWrite(VALVE_OPEN, HIGH);
       delay(DELAY_VALVE);
       digitalWrite(VALVE_PWR, LOW);
       delay(DELAY_1S - DELAY_VALVE);
-      valve_pos += 1;
+      st.valve_pos += 1;
     }
-  } else if(valve_tgt < valve_pos){
-    if(valve_act == -1){
+  } else if(st.valve_tgt < st.valve_pos){
+    if(st.valve_act == -1){
       //already moving down, just wait
       delay(DELAY_1S);
-      valve_pos -= 1;
+      st.valve_pos -= 1;
     } else {
       //start moving down, OPENING valve
-      valve_act = -1;
+      st.valve_act = -1;
       digitalWrite(VALVE_OPEN, LOW);
       delay(DELAY_VALVE);
       digitalWrite(VALVE_PWR, LOW);
       delay(DELAY_1S - DELAY_VALVE);
-      valve_pos -= 1;
+      st.valve_pos -= 1;
     }
   } else {
     //target reached, stop
-    valve_act = 0;
+    st.valve_act = 0;
     digitalWrite(VALVE_PWR, HIGH);
     delay(DELAY_VALVE);
     digitalWrite(VALVE_OPEN, HIGH);
@@ -152,20 +115,20 @@ void SetValve(int offset){
 void ReadTemp()
 {
 #ifndef TEMP_EMUL
-  temp_err = '>';
+  st.temp_err = '>';
   double t = tc.readCelsius();
   //not sure if it works as expected, bit lib returns NAN if no sensor attached
   if(t == NAN){
-    temp_err = 'E';
+    st.temp_err = 'E';
     return;
   }
   //ignore values out of limits
-  if(t < conf[TEMP_MIN_ID]){
-    temp_err = 'E';
+  if(t < ConfGet(TEMP_MIN_ID)){
+    st.temp_err = 'E';
     return;
   }
-  if(t > conf[TEMP_MAX_ID]){
-    temp_err = 'E';
+  if(t > ConfGet(TEMP_MAX_ID)){
+    st.temp_err = 'E';
     return;
   }
   //shift new value in
@@ -181,16 +144,16 @@ void ReadTemp()
   }
 
   //check range
-  if( t < conf[TEMP_MIN_ID]) {
-    temp_err = 'E';
+  if( t < ConfGet(TEMP_MIN_ID)) {
+    st.temp_err = 'E';
   } else
-  if(t > conf[TEMP_MAX_ID]) {
-    temp_err = 'E';
+  if(t > ConfGet(TEMP_MAX_ID)) {
+    st.temp_err = 'E';
   }
 
   //calc correction
   double f = a * t + b;
-  temp = f;
+  st.temp = f;
 #else //TEMP_EMUL
   switch(millis()%30){ 
     case  0 ... 9: temp = 98.7654321; break;
@@ -216,7 +179,7 @@ void ReadTurbidity(){
   }
   // convert to percent
   t = t / (TURBIDITY_MAX / 100);
-  turbidity = t;
+  st.turbidity = t;
 }
 
 int ReadBtn(int btn)
@@ -234,76 +197,15 @@ int ReadBtn(int btn)
 
 void SetStep(int setto)
 {
-  step = setto;
+  st.step = setto;
   Serial.print(">> >> >> >> >> Step: ");
-  Serial.println(step);  
-}
-
-void UpdateDisplay()
-{
-  #ifdef  DEBUG1
-  Serial.print(millis());
-  Serial.print(", Step=");
-  Serial.print(step);
-  Serial.print(", temp=");
-  Serial.print(temp);
-  Serial.print(", cnt=");
-  Serial.print(cntdown);
-  Serial.print(", mix=");
-  Serial.print(mix);
-  Serial.print(", vpwr=");
-  Serial.print(vpwr);
-  Serial.print(", vdir=");
-  Serial.print(vdir);
-  Serial.print(", buzz=");
-  Serial.print(buzz);
-  Serial.println("");
-  #endif
-
-  //0123456789ABCDEF
-  //T:99.0>70 C:9876
-  //S:12 TEMP V11>20
-
-  lcd.clear();
-  lcd.setCursor(0,0);
-  lcd.print("T:");
-  if(temp < 10) lcd.print(" ");
-  lcd.print(temp, 1);
-  lcd.print(temp_err);
-  lcd.print(target);
-  lcd.setCursor(10,0);
-  lcd.print("C:");
-  if(cntdown < 1000) lcd.print(" ");
-  if(cntdown < 100) lcd.print(" ");
-  if(cntdown < 10)  lcd.print(" ");
-  lcd.print(cntdown);
-
-  lcd.setCursor(0,1);
-  lcd.print("S:");
-  if(step < 10) lcd.print(" ");
-  lcd.print(step);
-  
-  lcd.setCursor(5,1);
-  // show step type or turbidity analog read
-  if(show_turbidity == 0) {
-    show_turbidity = 1;
-    lcd.print(pgm_names[pgm[step].op]);
-  } else {
-    show_turbidity = 0;
-    lcd.print(turbidity, 1);
-    lcd.print('%');
-  }
-
-  lcd.setCursor(10,1);
-  lcd.print("V");
-  if(valve_pos < 10) lcd.print(" ");
-  lcd.print(valve_pos);
-  lcd.print(">");
-  if(valve_tgt < 10) lcd.print(" ");
-  lcd.print(valve_tgt);
+  Serial.println(st.step);  
 }
 
 void writeData(){
+  extern int8_t conf[];
+  extern struct pgm_step pgm[];
+  
   if(index < CONF_SIZE){
     #ifdef DEBUG
     Serial.print("Write conf[");
@@ -340,28 +242,31 @@ void writeData(){
 }
 
 void loadData(){
+  extern int8_t conf[];
+  extern struct pgm_step pgm[];
+  
   Serial.println("Loading CONF...");
   
   //overwrite default conf with stored params
   uint8_t t;
-  for(int i = 0; i < CONF_SIZE; i++){
+  for(uint8_t i = 0; i < CONF_SIZE; i++){
     Serial.print(i);
     Serial.print(": ");
     t = EEPROM.read(i);
     if(t != 0xFF)  conf[i] = t;
-    Serial.print(conf_names[i]);
+    Serial.print(ConfGetName(i));
     Serial.print(": ");
-    Serial.println(conf[i]);
+    Serial.println(ConfGet(i));
   }
   // target temperature set to maximum allowed
-  target = conf[TEMP_MAX_ID];
+  st.target = ConfGet(TEMP_MAX_ID);
 
   Serial.println("Loading PGM...");
   byte op;
-  for(int i = 0; i < STEPS; i++){
+  for(int i = 0; i < PGM_STEPS; i++){
     Serial.print(i);
     Serial.print(": ");
-    int address = CONF_SIZE + (i * sizeof(pgm_step));
+    int address = CONF_SIZE + (i * PGM_STEP_SIZE);
     op = EEPROM.read(address);
     if(op != 0xFF){
       Serial.print("_OK_");
@@ -370,17 +275,17 @@ void loadData(){
       byte paramh = EEPROM.read(address+2);
       pgm[i].param = 256 * paramh + paraml;
     }
-    Serial.print(pgm_names[pgm[i].op]);
+    Serial.print(ProgGetStepName(ProgGetStep(i)));
     Serial.print(": ");
-    Serial.print(pgm[i].op);
+    Serial.print(ProgGetStep(i));
     Serial.print(": ");
-    Serial.print(pgm[i].param);
+    Serial.print(ProgGetParam(i));
     Serial.println();
   }
   
   //fill temp_avg for a start
   for(int i = 0; i < TEMP_AVG_SIZE; i++){
-    temp_avg[i] = conf[TEMP_MAX_ID];
+    temp_avg[i] = ConfGet(TEMP_MAX_ID);
   }
   //fill turb_avg
   for(int i = 0; i < TURB_AVG_SIZE; i++){
@@ -390,8 +295,11 @@ void loadData(){
 }
 
 void doConfig(){
+  extern int8_t conf[];
+  extern struct pgm_step pgm[];
+  
   Serial.println("Start config mode");
-  updateDisplayConf();
+  DisplayUpdateConf();
 
   static int btnReleased = 0;
   static int modeChanged = 0;
@@ -453,55 +361,12 @@ void doConfig(){
         }
       }
       pos = newPos;
-      updateDisplayConf();
+      DisplayUpdateConf();
     }//mode or pos changed
   }//while(1)
 }
 
-void updateDisplayConf(){
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    if(index < CONF_SIZE) {
-      Serial.print(index);
-      Serial.print(": ");
-      Serial.print(conf_names[index]);
-      Serial.print(": ");
-      Serial.println(conf[index]);
-      //display conf
-      lcd.print(conf_names[index]);
-      lcd.setCursor(11, 0);
-      if(index < 10) lcd.print(" ");
-      lcd.print(index);
-      lcd.print("/");
-      lcd.print(CONF_SIZE-1);
-      lcd.setCursor(0,1);
-      lcd.print(conf[index]);
-    } else {
-      //display steps
-      Serial.print(index);
-      Serial.print(": ");
-      Serial.print(pgm_names[pgm[index - CONF_SIZE].op]);
-      Serial.print(": ");
-      Serial.println(pgm[index-CONF_SIZE].param);
-      lcd.setCursor(0, 0);
-      lcd.print(pgm_names[pgm[index - CONF_SIZE].op]);
-      lcd.setCursor(11,0);
-      if(index-CONF_SIZE < 10) lcd.print(" ");
-      lcd.print(index-CONF_SIZE);
-      lcd.print("/");
-      lcd.print(STEPS-1);
-      lcd.setCursor(0,1);
-      lcd.print(pgm[index-CONF_SIZE].param);
-    }
-    
-    lcd.setCursor(13, 1);
-    if (mode) {
-      lcd.print("<->");
-    } else {
-      lcd.print("   ");
-    }
-    
-}
+
 
 
 /////////////////////////////////////////////////////////////////
@@ -514,9 +379,7 @@ void setup() {
 
     /* LCD indicator */
     Serial.println("LCD");
-    lcd.init();
-    lcd.backlight();
-    lcd.print("...");
+    DisplayInit();
     
     /* Inputs */
     Serial.println("inputs");
@@ -537,8 +400,8 @@ void setup() {
     if(ReadBtn(BTN_START) == 1) doConfig();
 
     //calc temp correction coeffs
-    a = conf[A_INT_ID] + (float)conf[A_FRA_ID] / 100.0;
-    b = conf[B_INT_ID] + (float)conf[B_FRA_ID] / 100.0;
+    a = ConfGet(A_INT_ID) + (float)ConfGet(A_FRA_ID) / 100.0;
+    b = ConfGet(B_INT_ID) + (float)ConfGet(B_FRA_ID) / 100.0;
     Serial.print("a = ");
     Serial.print(a);
     Serial.print(", b = ");
@@ -546,7 +409,7 @@ void setup() {
     Serial.println();
 
     #ifdef DEBUG_TEMP
-    lcd.print("TEMP TEST...");
+    //lcd.print("TEMP TEST..."); //TODO: add method for arbitrary string
     for(int i = 0; i < 100; i++){
       float f = a * i + b;
       Serial.print(i);
@@ -570,11 +433,11 @@ void setup() {
     SetBuzzer(0);
 
 #ifndef SKIP_VALVE    
-    lcd.print("Open valve...");
+    //lcd.print("Open valve..."); //TODO: add display method
     digitalWrite(VALVE_OPEN, LOW);
     delay(DELAY_VALVE);
     digitalWrite(VALVE_PWR, LOW);
-    delay(conf[VALVE_TIME_ID]*1000);
+    delay(ConfGet(VALVE_TIME_ID)*1000);
     digitalWrite(VALVE_PWR, HIGH);
     delay(DELAY_VALVE);
     digitalWrite(VALVE_OPEN, HIGH);
@@ -586,18 +449,18 @@ void setup() {
 void DoMainLoop(){
   ReadTemp();
   ReadTurbidity();
-  UpdateDisplay();
-  if(cntdown > 0) cntdown--;
+  DisplayUpdate(&st);
+  if(st.cntdown > 0) st.cntdown--;
   
-  if(pgm[step].op == OP_STOP){
+  if(ProgGetStep(st.step) == OP_STOP){
     delay(DELAY_1S);
   } else {
     //control valve once in temp_intvl
-    if(temp_intvl > conf[TEMP_INTVL_ID]){ 
-      temp_intvl = 0;
-      SetValve((temp - target) * conf[TEMP_TIME_ID]);
+    if(st.temp_intvl > ConfGet(TEMP_INTVL_ID)){ 
+      st.temp_intvl = 0;
+      SetValve((st.temp - st.target) * ConfGet(TEMP_TIME_ID));
     } else {
-      temp_intvl++;
+      st.temp_intvl++;
       SetValve(0);
     }
   }
@@ -613,10 +476,10 @@ while(1) {
   delay(300);
   
   //loop through program  
-  for(uint8_t s = 0; s < STEPS; s++){ 
+  for(uint8_t s = 0; s < PGM_STEPS; s++){ 
     SetStep(s);
-    uint8_t op = pgm[s].op;
-    uint16_t param = pgm[s].param;
+    uint8_t op = ProgGetStep(s);
+    uint16_t param = ProgGetParam(s);
     
     #ifdef DEBUG
     Serial.print("op: ");
@@ -654,16 +517,16 @@ while(1) {
     else if(op == OP_TIME){
       SetMixer(1);
       //keep temp for given time
-      cntdown = param;
-      while(cntdown) {
+      st.cntdown = param;
+      while(st.cntdown) {
         DoMainLoop();
       }
     } // end OP_TIME
     else if(op == OP_TEMP){
       SetMixer(1);
       //keep given temp regardless of time
-      target = param;
-      while(temp > target) {
+      st.target = param;
+      while(st.temp > st.target) {
         DoMainLoop();     
       }
     } // end OP_TEMP
